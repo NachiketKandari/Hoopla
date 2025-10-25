@@ -84,10 +84,13 @@ class InvertedIndex:
     def bm25_search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
         tokens = pre_process(query)
         scores = {}
-        for doc_id in self.docmap:
+
+        eligible_movies = search_command(query, len(self.docmap)).copy()
+        for movie in eligible_movies:
+            doc_id = movie['id']
             score = 0.0
             for token in tokens:
-                score += self.bm25(doc_id, token)
+                score += self.bm25(doc_id,token)
             scores[doc_id] = score
 
         sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
@@ -99,7 +102,6 @@ class InvertedIndex:
             results.append(document)
 
         return results
-
     
     def build(self) -> None:
         movies = load_movies()
