@@ -21,6 +21,7 @@ class InvertedIndex:
         self.term_frequencies_path = os.path.join(CACHE_DIR, "term_frequencies.pkl")
         self.doc_lengths: dict = {}
         self.doc_lengths_path = os.path.join(CACHE_DIR, "doc_lengths.pkl")
+        self.avg_doc_length: float = 0.0
     
     def __add_documents(self, doc_id: int, text: str) -> None:
         tokenized_text = pre_process(text)
@@ -71,7 +72,7 @@ class InvertedIndex:
         tf = self.get_tf(doc_id, term)
         movie = self.docmap[doc_id]
         doc_length = len(pre_process(f"{movie['title']} {movie['description']}"))
-        avg_doc_length = self.__get_avg_doc_length()
+        avg_doc_length = self.avg_doc_length
         length_norm = 1 - b + b * (doc_length / avg_doc_length)
         tf_component = (tf * (k1 + 1)) / (tf + k1 * length_norm)
         return tf_component
@@ -82,6 +83,8 @@ class InvertedIndex:
         return bm25_tf*bm25_idf
 
     def bm25_search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
+        self.avg_doc_length = self.__get_avg_doc_length() # setting avg_doc_lenght after loading
+        
         tokens = pre_process(query)
         scores = {}
 
@@ -154,7 +157,7 @@ def bm25_tf_command(doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25
 def bm25_search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dict]:
     invertedIdx = InvertedIndex()
     invertedIdx.load()
-    return invertedIdx.bm25_search(query)
+    return invertedIdx.bm25_search(query, limit)
 
 def build_command() -> int:
     invertedIdx = InvertedIndex()
