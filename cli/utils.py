@@ -1,5 +1,6 @@
+from email.policy import default
 from path import (
-    DEFAULT_SEARCH_LIMIT,CACHE_DIR,
+    DEFAULT_SEARCH_LIMIT,CACHE_DIR, BM25_K1,BM25_B,
     load_movies,read_stopwords,
 )
 import os
@@ -18,26 +19,90 @@ class InvertedIndex:
         self.docmap_path = os.path.join(CACHE_DIR, "docmap.pkl")
         self.term_frequencies = defaultdict(Counter)
         self.term_frequencies_path = os.path.join(CACHE_DIR, "term_frequencies.pkl")
+        self.doc_lengths: dict = {}
+        self.doc_lengths_path = os.path.join(CACHE_DIR, "doc_lengths.pkl")
     
     def __add_documents(self, doc_id: int, text: str) -> None:
         tokenized_text = pre_process(text)
+        self.doc_lengths[doc_id] = len(tokenized_text)
         for token in set(tokenized_text):
             self.index[token].add(doc_id)
         self.term_frequencies[doc_id].update(tokenized_text)
-    
+
+    def __get_avg_doc_length(self) -> float:
+        total = 0
+        for _, value in self.doc_lengths.items():
+            total+=value
+        return total/len(self.doc_lengths)
+
     def get_documents(self, term: str) -> list[int]:
         doc_ids = self.index.get(term.lower(), set())
         return sorted(list(doc_ids))
     
     def get_tf(self, doc_id: int, term: str) -> int:
-        tokenized_text = pre_process(term)
-        if len(tokenized_text) != 1:
+        tokenized_term = pre_process(term)
+        if len(tokenized_term) != 1:
             raise Exception("Should be single token")
-        return self.term_frequencies[doc_id][tokenized_text[0]]
+        tf = self.term_frequencies[doc_id][tokenized_term[0]]
+        return tf
+    
+    def get_idf(self, term: str) -> float:
+        tokenized_term = pre_process(term)
+        if len(tokenized_term) != 1:
+            raise Exception("Should be single token")
+        doc_count = len(self.docmap)
+        term_doc_count = len(self.get_documents(tokenized_term[0]))
+        idf = math.log((doc_count + 1) / (term_doc_count + 1))
+        return idf
+
+    # helps in more stable idf scoring viz a viz tf-idf
+    # term-freq saturation : prevents terms from dominating by appearing too often
+    # document length normalization : accounts for longer vs shorter docs
+    def get_bm25_idf(self, term: str) -> float:
+        tokenized_term = pre_process(term)
+        if len(tokenized_term) != 1:
+            raise Exception("Should be single token")
+        N = len(self.docmap)
+        df = len(self.get_documents(tokenized_term[0]))
+        bm_25 = math.log((N - df + 0.5) / (df + 0.5) + 1)
+        return bm_25
+    
+    def get_bm25_tf(self, doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25_B) -> float: 
+        tf = self.get_tf(doc_id, term)
+        movie = self.docmap[doc_id]
+        doc_length = len(pre_process(f"{movie['title']} {movie['description']}"))
+        avg_doc_length = self.__get_avg_doc_length()
+        length_norm = 1 - b + b * (doc_length / avg_doc_length)
+        tf_component = (tf * (k1 + 1)) / (tf + k1 * length_norm)
+        return tf_component
+    
+    def bm25(self, doc_id: int, term: str) -> float:
+        bm25_tf = self.get_bm25_tf(doc_id, term)
+        bm25_idf = self.get_bm25_idf(term)
+        return bm25_tf*bm25_idf
+
+    def bm25_search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
+        tokens = pre_process(query)
+        scores = {}
+        for doc_id in self.docmap:
+            score = 0.0
+            for token in tokens:
+                score += self.bm25(doc_id, token)
+            scores[doc_id] = score
+
+        sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+        results = []
+        for doc_id, score in sorted_docs[:limit]:
+            document = self.docmap[doc_id].copy()
+            document["score"] = score
+            results.append(document)
+
+        return results
+
     
     def build(self) -> None:
         movies = load_movies()
-        results = []
         for movie in movies:
             doc_id = movie['id']
             self.docmap[doc_id]=movie
@@ -51,6 +116,8 @@ class InvertedIndex:
             pickle.dump(self.docmap, file)
         with open(self.term_frequencies_path, "wb") as file:
             pickle.dump(self.term_frequencies, file)
+        with open(self.doc_lengths_path, "wb") as file:
+            pickle.dump(self.doc_lengths, file)
     
     def load(self):
         with open(self.index_path, "rb") as file:
@@ -59,20 +126,33 @@ class InvertedIndex:
             self.docmap = pickle.load(file)
         with open(self.term_frequencies_path, "rb") as file:
             self.term_frequencies = pickle.load(file)
+        with open(self.doc_lengths_path, "rb") as file:
+            self.doc_lengths = pickle.load(file)
 
 def tf_command(doc_id: int, term: str) -> int:
     invertedIdx = InvertedIndex()
     invertedIdx.load()
     return invertedIdx.get_tf(doc_id,term)
 
-def idf_command(term:str) -> float:
+def idf_command(term: str) -> float:
     invertedIdx = InvertedIndex()
     invertedIdx.load()
-    tokenized_term = pre_process(term)
-    doc_count = len(invertedIdx.docmap)
-    term_doc_count = len(invertedIdx.get_documents(tokenized_term[0]))
-    idf = math.log((doc_count + 1) / (term_doc_count + 1))
-    return idf
+    return invertedIdx.get_idf(term)
+
+def bm25_idf_command(term: str) -> float:
+    invertedIdx = InvertedIndex()
+    invertedIdx.load()
+    return invertedIdx.get_bm25_idf(term)
+
+def bm25_tf_command(doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25_B) -> float:
+    invertedIdx = InvertedIndex()
+    invertedIdx.load()
+    return invertedIdx.get_bm25_tf(doc_id,term)
+
+def bm25_search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dict]:
+    invertedIdx = InvertedIndex()
+    invertedIdx.load()
+    return invertedIdx.bm25_search(query)
 
 def build_command() -> int:
     invertedIdx = InvertedIndex()
