@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import argparse
 from os import path
-from path import (BM25_K1,BM25_B)
-from utils import (
+from lib.search_utils import (BM25_K1,BM25_B)
+from lib.keyword_search import (
     bm25_tf_command, search_command,build_command, tf_command, idf_command, bm25_idf_command, bm25_search_command
 )
 
