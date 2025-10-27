@@ -39,6 +39,8 @@ class InvertedIndex:
     def get_documents(self, term: str) -> list[int]:
         doc_ids = self.index.get(term.lower(), set())
         return sorted(list(doc_ids))
+
+########### TF - IDF ###########
     
     def get_tf(self, doc_id: int, term: str) -> int:
         tokenized_term = pre_process(term)
@@ -55,6 +57,8 @@ class InvertedIndex:
         term_doc_count = len(self.get_documents(tokenized_term[0]))
         idf = math.log((doc_count + 1) / (term_doc_count + 1))
         return idf
+    
+########### BM25 TF - IDF ###########
 
     # helps in more stable idf scoring viz a viz tf-idf
     # term-freq saturation : prevents terms from dominating by appearing too often
@@ -82,15 +86,25 @@ class InvertedIndex:
         bm25_idf = self.get_bm25_idf(term)
         return bm25_tf*bm25_idf
 
+########### Search ###########
+
     def bm25_search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
-        self.avg_doc_length = self.__get_avg_doc_length() # setting avg_doc_lenght after loading
+        self.avg_doc_length = self.__get_avg_doc_length() # setting avg_doc_length after loading
         
         tokens = pre_process(query)
         scores = {}
 
-        eligible_movies = search_command(query, len(self.docmap)).copy()
-        for movie in eligible_movies:
-            doc_id = movie['id']
+        # using eligible movies to speed up the search
+        # eligible_movies = search_command(query, len(self.docmap)).copy()
+        # for movie in eligible_movies:
+            # doc_id = movie['id']
+            # score = 0.0
+            # for token in tokens:
+            #     score += self.bm25(doc_id,token)
+            # scores[doc_id] = score
+
+        for id, _ in self.docmap.items():
+            doc_id = id
             score = 0.0
             for token in tokens:
                 score += self.bm25(doc_id,token)
@@ -144,25 +158,20 @@ def idf_command(term: str) -> float:
     invertedIdx.load()
     return invertedIdx.get_idf(term)
 
-def bm25_idf_command(term: str) -> float:
-    invertedIdx = InvertedIndex()
-    invertedIdx.load()
-    return invertedIdx.get_bm25_idf(term)
-
 def bm25_tf_command(doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25_B) -> float:
     invertedIdx = InvertedIndex()
     invertedIdx.load()
     return invertedIdx.get_bm25_tf(doc_id,term)
 
+def bm25_idf_command(term: str) -> float:
+    invertedIdx = InvertedIndex()
+    invertedIdx.load()
+    return invertedIdx.get_bm25_idf(term)
+
 def bm25_search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dict]:
     invertedIdx = InvertedIndex()
     invertedIdx.load()
     return invertedIdx.bm25_search(query, limit)
-
-def build_command() -> int:
-    invertedIdx = InvertedIndex()
-    invertedIdx.build()
-    invertedIdx.save()
 
 def search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dict]:
     invertedIdx = InvertedIndex()
@@ -184,6 +193,12 @@ def search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dict]:
             
     return results
 
+def build_command() -> int:
+    invertedIdx = InvertedIndex()
+    invertedIdx.build()
+    invertedIdx.save()
+
+########### Pre-Processing ###########
 
 def pre_process(input: str) -> list:
     return stem_words(remove_stopwords(tokenize(remove_punctuation(convert_to_lower(input)))))

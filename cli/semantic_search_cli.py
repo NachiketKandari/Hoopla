@@ -67,7 +67,7 @@ def main():
             results = search_chunked_command(args.query, args.limit)
             for i, res in enumerate(results, 1):
                 print(f"\n{i}. {res['title']} (score: {res['score']:.4f})")
-                print(f"   {res['desc']}...")
+                print(f"   {res['description']}...")
         case _:
             parser.print_help()
 

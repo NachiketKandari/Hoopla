@@ -14,17 +14,13 @@ class SemanticSearch:
         self.embeddings = None
         self.documents = None
         self.document_map = {}
-        
-    def load_or_create_embeddings(self, documents):
-        self.documents = documents
-        for doc in documents:
-            self.document_map[doc['id']] = doc
-        if not os.path.exists(EMBEDDING_PATH):
-            return self.build_embeddings(documents)
-        with open(EMBEDDING_PATH, "rb") as f:
-            self.embeddings = np.load(f)
-        return self.embeddings
-
+    
+    def generate_embeddings(self, text: str):
+        if text.isspace() or len(text) == 0:
+            raise ValueError("Empty string")
+        embedding = self.model.encode([text])
+        return embedding[0]
+    
     def build_embeddings(self, documents: list[dict]):
         self.documents = documents
         doc_list = []
@@ -35,15 +31,19 @@ class SemanticSearch:
         with open(EMBEDDING_PATH, 'wb') as f:
             np.save(f, self.embeddings)
         return self.embeddings
-
-    def generate_embeddings(self, text: str):
-        if text.isspace() or len(text) == 0:
-            raise ValueError("Empty string")
-        embedding = self.model.encode([text])
-        return embedding[0]
+        
+    def load_or_create_embeddings(self, documents):
+        self.documents = documents
+        for doc in documents:
+            self.document_map[doc['id']] = doc
+        if not os.path.exists(EMBEDDING_PATH):
+            return self.build_embeddings(documents)
+        with open(EMBEDDING_PATH, "rb") as f:
+            self.embeddings = np.load(f)
+        return self.embeddings
     
     def search(self, query: str, limit:int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
-        if len(self.embeddings) == 0:
+        if self.embeddings == None:
             raise ValueError("No embeddings loaded. Call `load_or_create_embeddings` first.")
         query_embedding = self.generate_embeddings(query)
         score_list = []
@@ -142,8 +142,9 @@ class ChunkedSemanticSearch(SemanticSearch):
                 break
             movie = self.document_map[key]
             results.append({
+                'id'    : movie['id'],
                 'title' : movie['title'],
-                'desc'  : movie['description'][:100],
+                'description'  : movie['description'][:100],
                 'score' : value
                 })
         return results
