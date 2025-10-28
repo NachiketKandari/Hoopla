@@ -22,6 +22,7 @@ class InvertedIndex:
         self.doc_lengths_path = os.path.join(CACHE_DIR, "doc_lengths.pkl")
         self.avg_doc_length: float = 0.0
         self.avg_doc_length_path = os.path.join(CACHE_DIR, "avg_doc_length.pkl")
+        self.avg_doc_length_path = os.path.join(CACHE_DIR, "avg_doc_length.pkl")
     
     def __add_documents(self, doc_id: int, text: str) -> None:
         tokenized_text = pre_process(text)
@@ -71,10 +72,12 @@ class InvertedIndex:
         df = len(self.get_documents(tokenized_term[0]))
         bm_25 = math.log((N - df + 0.5) / (df + 0.5) + 1)
         return max(bm_25, 0.0)
+        return max(bm_25, 0.0)
     
     def get_bm25_tf(self, doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25_B) -> float: 
         tf = self.get_tf(doc_id, term)
         movie = self.docmap[doc_id]
+        doc_length = self.doc_lengths[doc_id]
         doc_length = self.doc_lengths[doc_id]
         avg_doc_length = self.avg_doc_length
         length_norm = 1 - b + b * (doc_length / avg_doc_length)
@@ -90,6 +93,7 @@ class InvertedIndex:
 
     def bm25_search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
         # self.avg_doc_length = self.__get_avg_doc_length() 
+        # self.avg_doc_length = self.__get_avg_doc_length() 
         
         tokens = pre_process(query)
         scores = defaultdict(float)
@@ -102,6 +106,12 @@ class InvertedIndex:
             for token in tokens:
                 score += self.bm25(doc_id,token)
             scores[doc_id] = score
+
+        
+        # assigning 0 to the rest.
+        for doc_id, _ in self.docmap.items():
+            if doc_id not in scores:
+                scores[doc_id] = 0.0
 
         
         # assigning 0 to the rest.
@@ -126,6 +136,7 @@ class InvertedIndex:
             self.docmap[doc_id]=movie
             self.__add_documents(doc_id,f"{movie['title']} {movie['description']}")
         self.avg_doc_length = self.__get_avg_doc_length()
+        self.avg_doc_length = self.__get_avg_doc_length()
         
     def save(self) -> None:
         os.makedirs(CACHE_DIR, exist_ok=True)
@@ -140,6 +151,9 @@ class InvertedIndex:
         with open(self.avg_doc_length_path, "wb") as file:
             pickle.dump(self.avg_doc_length, file)
         
+        with open(self.avg_doc_length_path, "wb") as file:
+            pickle.dump(self.avg_doc_length, file)
+        
     def load(self):
         with open(self.index_path, "rb") as file:
             self.index = pickle.load(file)
@@ -149,6 +163,8 @@ class InvertedIndex:
             self.term_frequencies = pickle.load(file)
         with open(self.doc_lengths_path, "rb") as file:
             self.doc_lengths = pickle.load(file)
+        with open(self.avg_doc_length_path, "rb") as file:
+            self.avg_doc_length = pickle.load(file)
         with open(self.avg_doc_length_path, "rb") as file:
             self.avg_doc_length = pickle.load(file)
 
@@ -185,6 +201,10 @@ def search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dict]:
     
 def retrieve_documents(query: str, invertedIdx: InvertedIndex, limit: int) -> list[dict]:
     query_tokenized = pre_process(query)
+    results = retrieve_documents(query_tokenized, invertedIdx, limit)
+    return results
+    
+def retrieve_documents(query_tokenized: list[str], invertedIdx: InvertedIndex, limit: int) -> list[dict]:
     seen = set()
     results = []
     for query_token in query_tokenized: 
