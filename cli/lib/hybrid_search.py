@@ -85,7 +85,7 @@ def rrf_search_command(query: str, k: int, limit: int) :
     hybrid_search = HybridSearch(documents)
     results = hybrid_search.rrf_search(query, k, limit)
     for i, res in enumerate(results, 1):
-        print(f"{i}.\t{res['title']} \n\tRRF Score: {res['rrf_score']:.3f} \nBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n{res['description'][:100]}...")
+        print(f"{i}.\t{res['title']} \n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
 
 def rrf_score(rank, k: int = DEFAULT_K_VALUE):
     return 1/(k + rank)

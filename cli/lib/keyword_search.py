@@ -1,4 +1,3 @@
-from email.policy import default
 from lib.search_utils import (
     DEFAULT_SEARCH_LIMIT,CACHE_DIR, BM25_K1,BM25_B,
     load_movies,read_stopwords,
@@ -22,6 +21,7 @@ class InvertedIndex:
         self.doc_lengths: dict = {}
         self.doc_lengths_path = os.path.join(CACHE_DIR, "doc_lengths.pkl")
         self.avg_doc_length: float = 0.0
+        self.avg_doc_length_path = os.path.join(CACHE_DIR, "avg_doc_length.pkl")
     
     def __add_documents(self, doc_id: int, text: str) -> None:
         tokenized_text = pre_process(text)
@@ -70,12 +70,12 @@ class InvertedIndex:
         N = len(self.docmap)
         df = len(self.get_documents(tokenized_term[0]))
         bm_25 = math.log((N - df + 0.5) / (df + 0.5) + 1)
-        return bm_25
+        return max(bm_25, 0.0)
     
     def get_bm25_tf(self, doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25_B) -> float: 
         tf = self.get_tf(doc_id, term)
         movie = self.docmap[doc_id]
-        doc_length = len(pre_process(f"{movie['title']} {movie['description']}"))
+        doc_length = self.doc_lengths[doc_id]
         avg_doc_length = self.avg_doc_length
         length_norm = 1 - b + b * (doc_length / avg_doc_length)
         tf_component = (tf * (k1 + 1)) / (tf + k1 * length_norm)
@@ -89,26 +89,25 @@ class InvertedIndex:
 ########### Search ###########
 
     def bm25_search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
-        self.avg_doc_length = self.__get_avg_doc_length() # setting avg_doc_length after loading
+        # self.avg_doc_length = self.__get_avg_doc_length() 
         
         tokens = pre_process(query)
-        scores = {}
+        scores = defaultdict(float)
 
         # using eligible movies to speed up the search
-        # eligible_movies = search_command(query, len(self.docmap)).copy()
-        # for movie in eligible_movies:
-            # doc_id = movie['id']
-            # score = 0.0
-            # for token in tokens:
-            #     score += self.bm25(doc_id,token)
-            # scores[doc_id] = score
-
-        for id, _ in self.docmap.items():
-            doc_id = id
+        eligible_movies = retrieve_documents(query, self, len(self.docmap)).copy()
+        for movie in eligible_movies:
+            doc_id = movie['id']
             score = 0.0
             for token in tokens:
                 score += self.bm25(doc_id,token)
             scores[doc_id] = score
+
+        
+        # assigning 0 to the rest.
+        for doc_id, _ in self.docmap.items():
+            if doc_id not in scores:
+                scores[doc_id] = 0.0
 
         sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
@@ -126,6 +125,7 @@ class InvertedIndex:
             doc_id = movie['id']
             self.docmap[doc_id]=movie
             self.__add_documents(doc_id,f"{movie['title']} {movie['description']}")
+        self.avg_doc_length = self.__get_avg_doc_length()
         
     def save(self) -> None:
         os.makedirs(CACHE_DIR, exist_ok=True)
@@ -137,7 +137,9 @@ class InvertedIndex:
             pickle.dump(self.term_frequencies, file)
         with open(self.doc_lengths_path, "wb") as file:
             pickle.dump(self.doc_lengths, file)
-    
+        with open(self.avg_doc_length_path, "wb") as file:
+            pickle.dump(self.avg_doc_length, file)
+        
     def load(self):
         with open(self.index_path, "rb") as file:
             self.index = pickle.load(file)
@@ -147,6 +149,8 @@ class InvertedIndex:
             self.term_frequencies = pickle.load(file)
         with open(self.doc_lengths_path, "rb") as file:
             self.doc_lengths = pickle.load(file)
+        with open(self.avg_doc_length_path, "rb") as file:
+            self.avg_doc_length = pickle.load(file)
 
 def tf_command(doc_id: int, term: str) -> int:
     invertedIdx = InvertedIndex()
@@ -176,6 +180,10 @@ def bm25_search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dic
 def search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dict]:
     invertedIdx = InvertedIndex()
     invertedIdx.load()
+    results = retrieve_documents(query, invertedIdx, limit)
+    return results
+    
+def retrieve_documents(query: str, invertedIdx: InvertedIndex, limit: int) -> list[dict]:
     query_tokenized = pre_process(query)
     seen = set()
     results = []
