@@ -107,13 +107,6 @@ class InvertedIndex:
                 score += self.bm25(doc_id,token)
             scores[doc_id] = score
 
-        
-        # assigning 0 to the rest.
-        for doc_id, _ in self.docmap.items():
-            if doc_id not in scores:
-                scores[doc_id] = 0.0
-
-        
         # assigning 0 to the rest.
         for doc_id, _ in self.docmap.items():
             if doc_id not in scores:
@@ -201,10 +194,6 @@ def search_command(query: str, limit: int=DEFAULT_SEARCH_LIMIT) -> list[dict]:
     
 def retrieve_documents(query: str, invertedIdx: InvertedIndex, limit: int) -> list[dict]:
     query_tokenized = pre_process(query)
-    results = retrieve_documents(query_tokenized, invertedIdx, limit)
-    return results
-    
-def retrieve_documents(query_tokenized: list[str], invertedIdx: InvertedIndex, limit: int) -> list[dict]:
     seen = set()
     results = []
     for query_token in query_tokenized: 
