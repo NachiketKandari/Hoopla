@@ -9,7 +9,7 @@ from lib.search_utils import (
     )
 
 from lib.query_enhancement import (
-    enhance_query,
+    enhance_query,re_rank,
     )
 
 from .keyword_search import InvertedIndex
@@ -155,15 +155,21 @@ def weighted_search_command(query:str, alpha:float = DEFAULT_ALPHA_VALUE, limit:
     for i, res in enumerate(results, 1):
         print(f"{i}.\t{res['title']} \n\tHybrid Score: {res['hybrid_score']:.3f} \n\t{res['description'][:100]}...\n")
 
-def rrf_search_command(query: str, k: int, limit: int, enhance: str) :
+def rrf_search_command(query: str, k: int, limit: int, enhance: str, rerank: str) :
     documents = load_movies()
     hybrid_search = HybridSearch(documents)
     
     if enhance:
         enhanced_query = enhance_query(query,method=enhance)
         query = enhanced_query
-        
-    results = hybrid_search.rrf_search(query, k, limit)
+    
+    if rerank:
+        results = hybrid_search.rrf_search(query, k, limit*5)
+        results = re_rank(query,results,limit,rerank)
+        return
+    else:
+        results = hybrid_search.rrf_search(query, k, limit)
+
     for i, res in enumerate(results, 1):
         print(f"{i}.\t{res['title']} \n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
 
