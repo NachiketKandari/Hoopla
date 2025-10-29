@@ -9,8 +9,12 @@ from lib.search_utils import (
     )
 
 from lib.query_enhancement import (
-    enhance_query,re_rank,
+    enhance_query,
     )
+
+from lib.reranking import (
+    re_rank,
+)
 
 from .keyword_search import InvertedIndex
 from .semantic_search import ChunkedSemanticSearch
