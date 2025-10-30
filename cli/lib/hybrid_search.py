@@ -2,6 +2,7 @@ import os
 from collections import defaultdict
 from regex import R
 import heapq
+import logging
 
 from lib.search_utils import (
     DEFAULT_ALPHA_VALUE, DEFAULT_SEARCH_LIMIT,DEFAULT_K_VALUE,
@@ -13,13 +14,13 @@ from lib.query_enhancement import (
     )
 
 from lib.reranking import (
-    re_rank,
+    re_rank,evaluate_results,
 )
 
 from .keyword_search import InvertedIndex
 from .semantic_search import ChunkedSemanticSearch
 
-
+logger = logging.getLogger(__name__)
 class HybridSearch:
     def __init__(self, documents):
         self.documents = documents
@@ -118,6 +119,9 @@ class HybridSearch:
     #     return sorted(documents, key=lambda x : x['rrf_score'], reverse=True)[:limit]
     
     def rrf_search(self, query, k: int = DEFAULT_K_VALUE, limit: int = 2 * DEFAULT_SEARCH_LIMIT):
+        
+        logging.info(f"Original Query: {query}")
+
         keyword_res = self._bm25_search(query, limit=limit * 500)
         semantic_res = self.semantic_search.search_chunks(query, limit=limit * 500)
 
@@ -149,7 +153,8 @@ class HybridSearch:
             document["semantic_rank"] = doc_ranks_semantic.get(doc_id)
             
             results.append(document)
-
+        
+        # logging.info(f"RRF_SEARCH Results: {results}")
         return results
     
 def weighted_search_command(query:str, alpha:float = DEFAULT_ALPHA_VALUE, limit: int = DEFAULT_SEARCH_LIMIT):
@@ -159,7 +164,7 @@ def weighted_search_command(query:str, alpha:float = DEFAULT_ALPHA_VALUE, limit:
     for i, res in enumerate(results, 1):
         print(f"{i}.\t{res['title']} \n\tHybrid Score: {res['hybrid_score']:.3f} \n\t{res['description'][:100]}...\n")
 
-def rrf_search_command(query: str, k: int, limit: int, enhance: str, rerank: str) :
+def rrf_search_command(query: str, k: int, limit: int, enhance: str, rerank: str, evaluate: bool) :
     documents = load_movies()
     hybrid_search = HybridSearch(documents)
     
@@ -176,6 +181,9 @@ def rrf_search_command(query: str, k: int, limit: int, enhance: str, rerank: str
 
     for i, res in enumerate(results, 1):
         print(f"{i}.\t{res['title']} \n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
+
+    if evaluate:
+        evaluate_results(query, results)
 
 def rrf_score(rank, k: int = DEFAULT_K_VALUE):
     return 1/(k + rank)

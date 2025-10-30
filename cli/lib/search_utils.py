@@ -12,6 +12,7 @@ BM25_B = 0.75
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 MOVIE_PATH = os.path.join(PROJECT_ROOT, "data", "movies.json")
+TESTCASES_PATH = os.path.join(PROJECT_ROOT, "data", "golden_dataset.json")
 STOPWORDS_PATH = os.path.join(PROJECT_ROOT, "data", "stopwords.txt")
 CACHE_DIR = os.path.join(PROJECT_ROOT, "cache")
 INDEX_PKL_PATH = os.path.join(CACHE_DIR, "index.pkl")
@@ -24,6 +25,11 @@ def load_movies() -> list[dict]:
     with open(MOVIE_PATH, "r") as file:
         data = json.load(file)
     return data["movies"]
+
+def load_testcases() -> list[dict]:
+    with open(TESTCASES_PATH, "r") as file:
+        data = json.load(file)
+    return data["test_cases"]
 
 def read_stopwords() -> list[str]:
     with open(STOPWORDS_PATH, "r") as file:

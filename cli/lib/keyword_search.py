@@ -8,7 +8,9 @@ import string
 from collections import defaultdict, Counter
 import math
 from nltk.stem import PorterStemmer
+import logging
 
+logger = logging.getLogger(__name__)
 
 class InvertedIndex:
     def __init__(self) -> None:
@@ -92,10 +94,10 @@ class InvertedIndex:
 ########### Search ###########
 
     def bm25_search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
-        # self.avg_doc_length = self.__get_avg_doc_length() 
-        # self.avg_doc_length = self.__get_avg_doc_length() 
         
         tokens = pre_process(query)
+        logging.info(f"Query After enhancements: {tokens}")
+
         scores = defaultdict(float)
 
         # using eligible movies to speed up the search
@@ -217,8 +219,8 @@ def build_command() -> int:
 
 ########### Pre-Processing ###########
 
-def pre_process(input: str) -> list:
-    return stem_words(remove_stopwords(tokenize(remove_punctuation(convert_to_lower(input)))))
+def pre_process(input: str, isQuery=False) -> list:
+    return stem_words(remove_stopwords(tokenize(remove_punctuation(convert_to_lower(input)))),isQuery)
 
 def convert_to_lower(input: str) -> str:
     return input.lower()
@@ -237,11 +239,14 @@ def remove_stopwords(input: list[str]) -> list[str]:
             new_list.append(word)
     return new_list
 
-def stem_words(input: list[str])->list[str]:
+# This will stem words: movie, movies, moviemaker will become movi
+def stem_words(input: list[str], isQuery=False)->list[str]:
     stemmer = PorterStemmer()
     stemmed_list = []
     for token in input:
         stemmed_word = stemmer.stem(token)
+        if isQuery and stemmed_word not in stemmed_list:
+            stemmed_list.append(stemmed_word)
+            continue
         stemmed_list.append(stemmed_word)
     return stemmed_list
-    

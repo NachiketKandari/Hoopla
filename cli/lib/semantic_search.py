@@ -10,7 +10,7 @@ import os
 
 class SemanticSearch:
     def __init__(self) -> None:
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.model = SentenceTransformer('all-MiniLM-L6-v2',local_files_only=True)
         self.embeddings = None
         self.documents = None
         self.document_map = {}
@@ -43,7 +43,7 @@ class SemanticSearch:
         return self.embeddings
     
     def search(self, query: str, limit:int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
-        if self.embeddings == None:
+        if len(self.embeddings) == 0 or self.embeddings is None:
             raise ValueError("No embeddings loaded. Call `load_or_create_embeddings` first.")
         query_embedding = self.generate_embeddings(query)
         score_list = []

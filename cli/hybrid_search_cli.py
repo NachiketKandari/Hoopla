@@ -2,7 +2,10 @@ import argparse
 
 from lib.hybrid_search import (normalize_command,weighted_search_command,rrf_search_command)
 from lib.search_utils import (DEFAULT_ALPHA_VALUE, DEFAULT_K_VALUE, DEFAULT_SEARCH_LIMIT)
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hybrid Search CLI")
@@ -22,6 +25,7 @@ def main() -> None:
     rrf_parser.add_argument("--limit", type=int, default=DEFAULT_SEARCH_LIMIT,help="Search Limit")
     rrf_parser.add_argument("--enhance",type=str,choices=["spell","rewrite","expand"],help="Query enhancement method")
     rrf_parser.add_argument("--rerank-method",type=str,choices=["individual","batch","cross_encoder"],help="Re-ranking method")
+    rrf_parser.add_argument("--evaluate", action="store_true", help="Evaluation Flag")
 
     args = parser.parse_args()
 
@@ -33,7 +37,7 @@ def main() -> None:
         case "weighted-search":
             weighted_search_command(args.query, args.alpha, args.limit)
         case "rrf-search" :
-            rrf_search_command(args.query, args.k, args.limit, args.enhance, args.rerank_method)
+            rrf_search_command(args.query, args.k, args.limit, args.enhance, args.rerank_method, args.evaluate)
         case _:
             parser.print_help()
 

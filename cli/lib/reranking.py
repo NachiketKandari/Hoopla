@@ -5,13 +5,16 @@ from typing import Optional
 from dotenv import load_dotenv
 from google import genai
 from sentence_transformers import CrossEncoder
+import logging
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 api_key = os.getenv("gemini_api_key")
 client = genai.Client(api_key=api_key)
 model = "gemini-2.0-flash"
 
-cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2")
+cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2",local_files_only=True)
 
 def rerank_individual(query: str, results: list[dict],limit: int) -> None:
     for doc in results:
@@ -35,6 +38,7 @@ Score:"""
     
     sorted_results = sorted(results, key =lambda x:x['score'], reverse=True)[:limit] 
 
+    # logging.info(f"Cross-encoder Reranking Results: {sorted_results}")
     for i, res in enumerate(sorted_results, 1):
         print(f"{i}.\t{res['title']} \n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
 
@@ -60,6 +64,8 @@ Return ONLY the IDs in order of relevance (best match first). Return a valid JSO
             if doc['id'] == result:
                 docs.append(doc)
 
+    # logging.info(f"Cross-encoder Reranking Results: {docs}")
+
     for i, res in enumerate(docs, 1):
         print(f"{i}.\t{res['title']} \n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
 
@@ -83,10 +89,58 @@ def rerank_cross_encoder(query: str, results: list[dict],limit: int) -> None:
     for score, result in sorted_scored_results[:limit]:
         result['cross-encoder-score'] = score
         docs.append(result)
+    
+    # logging.info(f"Cross-encoder Reranking Results: {docs}")
 
     for i, res in enumerate(docs, 1):
         print(f"{i}.\t{res['title']} \n\tCross Encoder Score: {res['cross-encoder-score']}\n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
 
+def format_results(results: list[dict]) -> str:
+    formatted: str = ''
+    for res in results:
+        formatted += f"Title: {res['title']} Description: {res['description']}\n"
+    return formatted
+
+def evaluate_results(query: str, results: list[dict]):
+
+    formatted_results = format_results(results)
+    
+    prompt = f"""Rate how relevant each result is to this query on a 0-3 scale:
+    
+    Query: "{query}"
+
+    
+    Results: 
+    
+    {chr(10).join(formatted_results)}
+
+    
+    Scale:
+    
+    - 3: Highly relevant
+    
+    - 2: Relevant
+    
+    - 1: Marginally relevant
+    
+    - 0: Not relevant
+
+    
+    Do NOT give any numbers out of 0, 1, 2 or 3.
+
+    
+    Return ONLY the scores in teh same order you were given the documents. Return a valid JSON
+    list, nothing else. Don't use markdown in your response. For example: 
+    
+    [2, 0, 3, 2, 0, 1]
+    
+    """
+
+    response = client.models.generate_content(model=model, contents=prompt)
+
+    res_list = json.loads(response.text)
+    for i in range(0, len(res_list)):
+        print(f"{results[i]['title']} : {res_list[i]}/3\n")
 
 def re_rank(query: str, results: list[dict], limit: int ,method: Optional[str] = None) -> str:
     match method:
