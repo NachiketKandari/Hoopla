@@ -1,10 +1,6 @@
-from collections import defaultdict
 import os
-import json
-from typing import Optional
 from dotenv import load_dotenv
 from google import genai
-from sentence_transformers import CrossEncoder
 import logging
 
 from lib.hybrid_search import HybridSearch
@@ -16,8 +12,6 @@ load_dotenv()
 api_key = os.getenv("gemini_api_key")
 client = genai.Client(api_key=api_key)
 model = "gemini-2.0-flash"
-
-cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2",local_files_only=True)
 
 def generate_response(query: str, results: list[dict]) -> str:
     

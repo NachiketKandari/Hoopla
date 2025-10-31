@@ -20,18 +20,18 @@ def rerank_individual(query: str, results: list[dict],limit: int) -> None:
     for doc in results:
         prompt = f"""Rate how well this movie matches the search query.
 
-Query: "{query}"
-Movie: {doc.get("title", "")} - {doc.get("document", "")}
+        Query: "{query}"
+        Movie: {doc.get("title", "")} - {doc.get("document", "")}
 
-Consider:
-- Direct relevance to query
-- User intent (what they're looking for)
-- Content appropriateness
+        Consider:
+        - Direct relevance to query
+        - User intent (what they're looking for)
+        - Content appropriateness
 
-Rate 0-10 (10 = perfect match).
-Give me ONLY the number in your response, no other text or explanation.
+        Rate 0-10 (10 = perfect match).
+        Give me ONLY the number in your response, no other text or explanation.
 
-Score:"""
+        Score:"""
 
         response = client.models.generate_content(model=model, contents=prompt)
         doc['score'] = int((response.text or "").strip().strip('"'))
@@ -46,15 +46,15 @@ def rerank_batch(query: str, results: list[dict],limit: int) -> None:
 
     prompt = f"""Rank these movies by relevance to the search query.
 
-Query: "{query}"
+    Query: "{query}"
 
-Movies:
-{results}
+    Movies:
+    {results}
 
-Return ONLY the IDs in order of relevance (best match first). Return a valid JSON list, nothing else. Don't put it inside a json markdown. For example, the output should be like :
+    Return ONLY the IDs in order of relevance (best match first). Return a valid JSON list, nothing     else. Don't put it inside a json markdown. For example, the output should be like :
 
-[75, 12, 34, 2, 1]
-"""
+    [75, 12, 34, 2, 1]
+    """
 
     json_response = client.models.generate_content(model=model, contents=prompt)
     batch_results = json.loads(json_response.text)
