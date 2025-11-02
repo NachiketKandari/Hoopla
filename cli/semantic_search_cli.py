@@ -3,6 +3,10 @@
 import argparse
 from lib.semantic_search import (embed_query_text, embed_text, search_chunked_command, verify_model, verify_embeddings, search_command, chunk_command, semantic_chunk_command, embed_chunks_command)
 from lib.search_utils import (DEFAULT_SEARCH_LIMIT, DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP_SIZE,DEFAULT_MAX_CHUNK_SIZE)
+import time
+
+start_time = time.perf_counter()
+
 def main():
     parser = argparse.ArgumentParser(description="Semantic Search CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -70,6 +74,11 @@ def main():
                 print(f"   {res['description']}...")
         case _:
             parser.print_help()
+    
+    end_time = time.perf_counter()
+    
+    elapsed_time = end_time - start_time
+    print(f"Code execution time: {elapsed_time:.4f} seconds")
 
 if __name__ == "__main__":
     main()

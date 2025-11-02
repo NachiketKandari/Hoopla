@@ -7,6 +7,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 
+import time
+
+start_time = time.perf_counter()
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hybrid Search CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -41,6 +45,10 @@ def main() -> None:
         case _:
             parser.print_help()
 
+    end_time = time.perf_counter()
+    
+    elapsed_time = end_time - start_time
+    print(f"Code execution time: {elapsed_time:.4f} seconds")
 
 if __name__ == "__main__":
     main()

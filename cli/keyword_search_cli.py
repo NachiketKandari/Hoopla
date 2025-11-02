@@ -5,6 +5,9 @@ from lib.search_utils import (BM25_K1,BM25_B,DEFAULT_SEARCH_LIMIT)
 from lib.keyword_search import (
     bm25_tf_command, search_command,build_command, tf_command, idf_command, bm25_idf_command, bm25_search_command
 )
+import time
+
+start_time = time.perf_counter()
 
 
 def main() -> None:
@@ -76,6 +79,12 @@ def main() -> None:
                 print(f"{i}. ({res['id']}) {res['title']}")
         case _:
             parser.exit(2, parser.format_help())
+    
+    end_time = time.perf_counter()
+
+    elapsed_time = end_time - start_time
+    print(f"Code execution time: {elapsed_time:.4f} seconds")
+
 
 
 if __name__ == "__main__":
