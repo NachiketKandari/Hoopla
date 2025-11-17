@@ -15,7 +15,30 @@ from cli.lib.semantic_search import search_chunked_command
 from cli.lib.keyword_search import InvertedIndex
 import requests
 
-st.set_page_config(page_title="Hoopla RAG & Search", layout="wide")
+st.set_page_config(page_title="Hoopla", page_icon="🎬", layout="wide")
+
+
+@st.cache_data(show_spinner=False)
+def get_readme_content() -> str:
+    readme_path = Path(__file__).parent.parent / "README.md"
+    try:
+        return readme_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return "README.md not found."
+
+
+@st.cache_data(show_spinner=False)
+def get_movies_dataset() -> list[dict]:
+    return load_movies()
+
+def render_alt_page(title: str, content_renderer):
+    st.title(title)
+    if st.button("⬅ Back to main app", type="primary"):
+        st.session_state.show_readme_panel = False
+        st.session_state.show_dataset_panel = False
+        st.rerun()
+    content_renderer()
+    st.stop()
 
 # Initializing session state
 if 'model_type' not in st.session_state:
@@ -24,6 +47,10 @@ if 'ollama_models' not in st.session_state:
     st.session_state.ollama_models = []
 if 'selected_ollama_model' not in st.session_state:
     st.session_state.selected_ollama_model = None
+if 'show_readme_panel' not in st.session_state:
+    st.session_state.show_readme_panel = False
+if 'show_dataset_panel' not in st.session_state:
+    st.session_state.show_dataset_panel = False
 
 def get_ollama_models():
     try:
@@ -45,6 +72,7 @@ def load_ollama_models():
 # Sidebar for model selection
 with st.sidebar:
     st.header("Model Configuration")
+    
     model_type = st.radio("Select Model Type", ["API", "local"], index=0 if st.session_state.model_type == "API" else 1)
     st.session_state.model_type = model_type
     
@@ -61,8 +89,34 @@ with st.sidebar:
             st.session_state.selected_ollama_model = None
     else:
         st.info("Using Gemini API from .env file")
+    
+    st.divider()
 
-st.title("🎬 Hoopla RAG & Hybrid Search Toolkit")
+    st.header("Docs & Data")
+
+    if st.button("Open README", use_container_width=True):
+        st.session_state.show_readme_panel = True
+        st.session_state.show_dataset_panel = False
+
+    if st.button("Open Dataset Viewer", use_container_width=True):
+        st.session_state.show_dataset_panel = True
+        st.session_state.show_readme_panel = False
+ 
+    
+
+if st.session_state.get("show_readme_panel"):
+    def _render_readme():
+        st.markdown(get_readme_content())
+    render_alt_page("Project README", _render_readme)
+
+if st.session_state.get("show_dataset_panel"):
+    def _render_dataset():
+        st.caption("Full contents of data/movies.json")
+        st.json({"movies": get_movies_dataset()})
+    render_alt_page("Dataset Viewer", _render_dataset)
+
+st.title("🎬 Hoopla")
+st.caption("Unified UI for Hoopla’s hybrid search, RAG workflows, semantic retrieval, keyword tools, reranking helpers, and multimodal experiments powered by Gemini/Ollama.")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["RAG", "Hybrid Search", "Semantic Search", "Keyword Search", "Multimodal Search"])
 
@@ -128,7 +182,7 @@ with tab2:
         if query:
             with st.spinner("Searching..."):
                 try:
-                    documents = load_movies()
+                    documents = get_movies_dataset()
                     hybrid_search = HybridSearch(documents)
                     
                     if search_type == "rrf-search":
@@ -314,7 +368,7 @@ with tab4:
                     idx = InvertedIndex()
                     idx.load()
                     results = idx.bm25_search(query, limit)
-                    documents = load_movies()
+                    documents = get_movies_dataset()
                     doc_map = {doc['id']: doc for doc in documents}
                     
                     for i, res in enumerate(results, 1):
@@ -345,7 +399,7 @@ with tab5:
         if st.button("Search", key="multimodal_button"):
             with st.spinner("Searching with image..."):
                 try:
-                    documents = load_movies()
+                    documents = get_movies_dataset()
                     multimodal_search = MultiModalSearch(documents)
                     multimodal_search.load_or_create_embeddings()
                     results = multimodal_search.search_with_image(tmp_path)

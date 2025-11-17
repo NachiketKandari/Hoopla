@@ -1,6 +1,33 @@
-# RAG & Hybrid Search CLI Toolkit
+# RAG & Hybrid Search Toolkit
 
-This project provides a comprehensive Command Line Interface (CLI) tool for advanced movie retrieval and content generation, primarily leveraging Hybrid Search techniques (Keyword and Semantic Search) and Retrieval Augmented Generation (RAG) using the Gemini API. The generation features are specifically tailored to provide information useful for Hoopla users (a movie streaming service).
+This project provides both a Streamlit user interface and a comprehensive Command Line Interface (CLI) for advanced movie retrieval and content generation, primarily leveraging Hybrid Search techniques (Keyword and Semantic Search) and Retrieval Augmented Generation (RAG) using the Gemini API. The generation features are specifically tailored to provide information useful for Hoopla users (a movie streaming service).
+
+## Streamlit UI
+
+The Streamlit experience lives in `app/streamlit_app.py` and exposes all retrieval, hybrid search, and generation capabilities through an interactive dashboard.
+
+### Launch
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+Before launching, ensure `GEMINI_API_KEY` is available through `.env`, your environment, or Streamlit secrets.
+
+### UI Overview
+
+- `RAG` tab: run question answering, summarization, citation-style responses, or direct Q&A prompts on top of retrieved passages.
+- `Hybrid Search` tab: execute RRF or weighted BM25/Semantic queries with optional LLM-based query enhancement, reranking, and evaluation helpers.
+- `Semantic Search`, `Keyword Search`, and `Multimodal Search` tabs: provide the same capabilities as the CLI modules with forms, sliders, and toggles.
+- Results appear inline with helpful status messages, spinners, and error handling.
+
+### Sidebar Tools
+
+- **Model Configuration:** Switch between Gemini API usage and local Ollama models, with dynamic model discovery when running locally.
+- **README:** Displays the live contents of `README.md` so users can quickly reference features and setup instructions without leaving the app.
+- **Dataset Viewer:** Shows the complete `movies.json` dataset (JSON format) for quick inspection of available metadata.
+
+## CLI Features
 
 The toolkit encompasses functions for traditional keyword search (BM25), semantic search, multimodal image search, advanced hybrid search via Reciprocal Rank Fusion (RRF), query enhancement, result reranking, and automated performance evaluation.
 
