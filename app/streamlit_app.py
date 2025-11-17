@@ -133,7 +133,7 @@ with tab1:
     st.header("Retrieval Augmented Generation")
     
     rag_type = st.selectbox("Select RAG Type", ["rag", "summarize", "citations", "question"])
-    query = st.text_input("Enter your query", key="rag_query")
+    query = st.text_input("Enter your query", key="rag_query", placeholder="movies about action and dinosaurs")
     
     if st.button("Generate", key="rag_button"):
         if query:
@@ -168,7 +168,7 @@ with tab2:
     
     search_type = st.selectbox("Select Search Type", ["rrf-search", "weighted-search"])
     
-    query = st.text_input("Enter your query", key="hybrid_query")
+    query = st.text_input("Enter your query", key="hybrid_query", placeholder="friendship transformation magic with bears")
     
     col1, col2 = st.columns(2)
     
@@ -326,9 +326,27 @@ with tab2:
                                 else:
                                     response_text = generate_with_gemini(prompt)
                                 
-                                res_list = json.loads(response_text)
-                                for i in range(0, len(res_list)):
-                                    st.write(f"{results[i]['title']} : {res_list[i]}/3")
+                                if not response_text:
+                                    st.error("Failed to get evaluation response from the model. Please try again.")
+                                else:
+                                    try:
+                                        # Clean the response text - remove markdown code blocks if present
+                                        cleaned_text = response_text.strip()
+                                        if cleaned_text.startswith("```"):
+                                            # Remove markdown code block markers
+                                            lines = cleaned_text.split("\n")
+                                            cleaned_text = "\n".join(lines[1:-1]) if len(lines) > 2 else cleaned_text
+                                            cleaned_text = cleaned_text.strip()
+                                        
+                                        res_list = json.loads(cleaned_text)
+                                        if isinstance(res_list, list) and len(res_list) == len(results):
+                                            for i in range(0, len(res_list)):
+                                                st.write(f"{results[i]['title']} : {res_list[i]}/3")
+                                        else:
+                                            st.error(f"Invalid evaluation format. Expected a list of {len(results)} scores, but got: {response_text}")
+                                    except json.JSONDecodeError as e:
+                                        st.error(f"Failed to parse evaluation response as JSON: {response_text}")
+                                        st.error(f"Error: {str(e)}")
                     else:
                         results = hybrid_search.weighted_search(query, alpha=alpha_value, limit=limit)
                         for i, res in enumerate(results, 1):
@@ -345,7 +363,7 @@ with tab2:
 with tab3:
     st.header("Semantic Search")
     
-    query = st.text_input("Enter your query", key="semantic_query")
+    query = st.text_input("Enter your query", key="semantic_query", placeholder="funny bear movies")
     limit = st.number_input("Limit", min_value=1, max_value=50, value=DEFAULT_SEARCH_LIMIT, step=1, key="semantic_limit")
     
     if st.button("Search", key="semantic_button"):
@@ -366,7 +384,7 @@ with tab3:
 with tab4:
     st.header("Keyword Search (BM25)")
     
-    query = st.text_input("Enter your query", key="keyword_query")
+    query = st.text_input("Enter your query", key="keyword_query", placeholder="animated family")
     limit = st.number_input("Limit", min_value=1, max_value=50, value=DEFAULT_SEARCH_LIMIT, step=1, key="keyword_limit")
     
     if st.button("Search", key="keyword_button"):
@@ -393,7 +411,7 @@ with tab4:
 with tab5:
     st.header("Multimodal Image Search")
     
-    uploaded_file = st.file_uploader("Upload an image", type=['png', 'jpg', 'jpeg'])
+    uploaded_file = st.file_uploader("Upload an image to search by image", type=['png', 'jpg', 'jpeg'])
     
     if uploaded_file is not None:
         st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)

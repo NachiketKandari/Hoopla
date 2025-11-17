@@ -38,14 +38,17 @@ def main():
     
     cli_source = base_dir / "cli"
     lib_source = base_dir / "cli" / "lib"
+    app_source = base_dir / "app"
     
     cli_target = base_dir / "clicpy"
     lib_target = base_dir / "libcpy"
+    app_target = base_dir / "appcpy"
     
     print("Starting copy process...")
     
     copy_py_files_to_txt(cli_source, cli_target)
     copy_py_files_to_txt(lib_source, lib_target)
+    copy_py_files_to_txt(app_source, app_target)
     
     print("\nAll tasks complete.")
 

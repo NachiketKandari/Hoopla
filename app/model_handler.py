@@ -17,7 +17,7 @@ def generate_with_gemini(prompt: str) -> str:
     client = get_gemini_client()
     model = "gemini-2.0-flash"
     response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
+    return response.text or ""
 
 def generate_with_ollama(prompt: str, model_name: str) -> str:
     url = "http://localhost:11434/api/generate"
