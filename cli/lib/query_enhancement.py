@@ -1,12 +1,14 @@
 from collections import defaultdict
 import os
-import json
+import streamlit as st
 from typing import Optional
 from dotenv import load_dotenv
 from google import genai
 
 load_dotenv()
-api_key = os.getenv("gemini_api_key")
+api_key = st.secrets.get("GEMINI_API_KEY")
+if not api_key:
+    api_key = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)
 model = "gemini-2.0-flash"
 

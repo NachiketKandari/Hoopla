@@ -9,7 +9,9 @@ wheels/
 # Virtual environments
 .venv
 .env
+secrets.toml
+*.npy
 
 # Directories to ignore
-cache/
-data/
+cache/chunk_embeddings.npy
+# data/
