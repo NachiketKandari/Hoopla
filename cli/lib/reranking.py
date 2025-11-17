@@ -14,7 +14,7 @@ api_key = os.getenv("gemini_api_key")
 client = genai.Client(api_key=api_key)
 model = "gemini-2.0-flash"
 
-cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2",local_files_only=True)
+cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2")
 
 def rerank_individual(query: str, results: list[dict],limit: int) -> None:
     for doc in results:

@@ -8,7 +8,7 @@ import numpy as np
 
 class MultiModalSearch:
     def __init__(self,documents,  model_name="clip-ViT-B-32"):
-        self.model = SentenceTransformer(model_name,local_files_only=True)
+        self.model = SentenceTransformer(model_name)
         self.documents = documents
         self.texts = [f"{doc['title']}: {doc['description']}" for doc in documents]
         self.clip_embeddings_path = os.path.join(CACHE_DIR, "clip_embeddings.npy")
