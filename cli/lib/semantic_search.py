@@ -2,7 +2,7 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 import re
 import json
-from lib.search_utils import (
+from .search_utils import (
     DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP_SIZE, EMBEDDING_PATH, DEFAULT_SEARCH_LIMIT,DEFAULT_MAX_CHUNK_SIZE,CHUNK_EMBEDDING_PATH, CHUNK_METADATA_PATH,
     load_movies,
 )

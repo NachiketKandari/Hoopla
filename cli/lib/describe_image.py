@@ -3,7 +3,7 @@ import mimetypes
 from dotenv import load_dotenv
 from google import genai
 import logging
-from lib.search_utils import PROJECT_ROOT
+from .search_utils import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 

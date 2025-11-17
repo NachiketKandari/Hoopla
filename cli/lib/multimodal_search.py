@@ -1,8 +1,8 @@
 from PIL import Image
 import os
 from sentence_transformers import SentenceTransformer
-from lib.semantic_search import cosine_similarity
-from lib.search_utils import PROJECT_ROOT, CACHE_DIR, load_movies
+from .semantic_search import cosine_similarity
+from .search_utils import PROJECT_ROOT, CACHE_DIR, load_movies
 import heapq
 import numpy as np
 

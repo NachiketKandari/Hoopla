@@ -1,20 +1,38 @@
 import os
+import requests
+import json
 from dotenv import load_dotenv
 from google import genai
-import logging
-
-from .hybrid_search import HybridSearch
-from .search_utils import DEFAULT_SEARCH_LIMIT, load_movies
-
-logger = logging.getLogger(__name__)
 
 load_dotenv()
-api_key = os.getenv("gemini_api_key")
-client = genai.Client(api_key=api_key)
-model = "gemini-2.0-flash"
 
-def generate_response(query: str, results: list[dict]) -> str:
-    
+def get_gemini_client():
+    api_key = os.getenv("gemini_api_key") or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("Gemini API key not found in environment variables")
+    client = genai.Client(api_key=api_key)
+    return client
+
+def generate_with_gemini(prompt: str) -> str:
+    client = get_gemini_client()
+    model = "gemini-2.0-flash"
+    response = client.models.generate_content(model=model, contents=prompt)
+    return response.text
+
+def generate_with_ollama(prompt: str, model_name: str) -> str:
+    url = "http://localhost:11434/api/generate"
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False
+    }
+    response = requests.post(url, json=payload, timeout=60)
+    if response.status_code != 200:
+        raise Exception(f"Ollama API error: {response.status_code} - {response.text}")
+    result = response.json()
+    return result.get("response", "")
+
+def generate_response(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None) -> str:
     prompt = f"""Answer the question or provide information based on the provided documents. This should be tailored to Hoopla users. Hoopla is a movie streaming service. Respond without any bolding, italics, or other markdown. Just the text in points if neccessary.
 
     Query: {query}
@@ -22,12 +40,14 @@ def generate_response(query: str, results: list[dict]) -> str:
     Documents:
     {results}
 
-    Provide a comprehensive answer that addresses the query:""" 
+    Provide a comprehensive answer that addresses the query:"""
+    
+    if model_type == "local" and ollama_model:
+        return generate_with_ollama(prompt, ollama_model)
+    else:
+        return generate_with_gemini(prompt)
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
-
-def generate_multidoc_summary(query: str, results: list[dict]) -> str:
+def generate_multidoc_summary(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None) -> str:
     prompt = f"""
     Provide information useful to this query by synthesizing information from multiple search results in detail.
     The goal is to provide comprehensive information so that users know what their options are.
@@ -39,12 +59,14 @@ def generate_multidoc_summary(query: str, results: list[dict]) -> str:
     {results}
     Provide a comprehensive 3-4 sentence answer that combines information from multiple sources:
     """
+    
+    if model_type == "local" and ollama_model:
+        return generate_with_ollama(prompt, ollama_model)
+    else:
+        return generate_with_gemini(prompt)
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
-
-def generate_citations(query: str, results: list[dict]) -> str:
-    prompt = prompt = f"""Answer the question or provide information based on the provided documents.
+def generate_citations(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None) -> str:
+    prompt = f"""Answer the question or provide information based on the provided documents.
 
     This should be tailored to Hoopla users. Hoopla is a movie streaming service.
 
@@ -65,11 +87,13 @@ def generate_citations(query: str, results: list[dict]) -> str:
 
 
     Answer:"""
+    
+    if model_type == "local" and ollama_model:
+        return generate_with_ollama(prompt, ollama_model)
+    else:
+        return generate_with_gemini(prompt)
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
-
-def generate_answer(query: str, results: list[dict]) -> str:
+def generate_answer(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None) -> str:
     prompt = f"""Answer the following question based on the provided documents.
 
     Question: {query}
@@ -89,53 +113,9 @@ def generate_answer(query: str, results: list[dict]) -> str:
     - Opinion-based questions: Acknowledge subjectivity and provide a balanced view
 
     Answer:"""
-
-    response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
-
-def get_results(query: str) -> list[dict]:
-    documents = load_movies()
-    hybrid_search = HybridSearch(documents)
-
-    results = hybrid_search.rrf_search(query, limit=DEFAULT_SEARCH_LIMIT)
-    return results
-
-def rag_command(query: str) -> None:
-    results = get_results(query)
-    response = generate_response(query, results)
-
-    print("Search Results: ")
-    for res in results:
-        print(f"\n\t-{res['title']}")
     
-    print(f"\n\nRAG Response:\n{response}")
+    if model_type == "local" and ollama_model:
+        return generate_with_ollama(prompt, ollama_model)
+    else:
+        return generate_with_gemini(prompt)
 
-def summarize_command(query: str) -> None:
-    results = get_results(query)
-    response = generate_multidoc_summary(query, results)
-
-    print("Search Results: ")
-    for res in results:
-        print(f"\n\t-{res['title']}")
-    
-    print(f"\n\nLLM Summary:\n{response}")
-
-def citations_command(query: str) -> None:
-    results = get_results(query)
-    response = generate_citations(query, results)
-
-    print("Search Results: ")
-    for res in results:
-        print(f"\n\t-{res['title']}")
-    
-    print(f"\n\nLLM Answer:\n{response}")
-
-def question_command(query: str) -> None:
-    results = get_results(query)
-    response = generate_answer(query, results)
-
-    print("Search Results: ")
-    for res in results:
-        print(f"\n\t-{res['title']}")
-    
-    print(f"\n\nAnswer:\n{response}")

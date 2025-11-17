@@ -1,4 +1,4 @@
-from lib.search_utils import (
+from .search_utils import (
     DEFAULT_SEARCH_LIMIT,CACHE_DIR, BM25_K1,BM25_B,
     load_movies,read_stopwords,
 )

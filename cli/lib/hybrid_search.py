@@ -1,19 +1,18 @@
 import os
 from collections import defaultdict
-from regex import R
 import heapq
 import logging
 
-from lib.search_utils import (
+from .search_utils import (
     DEFAULT_ALPHA_VALUE, DEFAULT_SEARCH_LIMIT,DEFAULT_K_VALUE,
     load_movies,
     )
 
-from lib.query_enhancement import (
+from .query_enhancement import (
     enhance_query,
     )
 
-from lib.reranking import (
+from .reranking import (
     re_rank,evaluate_results,
 )
 
