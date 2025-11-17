@@ -31,13 +31,21 @@ def get_readme_content() -> str:
 def get_movies_dataset() -> list[dict]:
     return load_movies()
 
-def render_alt_page(title: str, content_renderer):
+def render_alt_page(title: str, content_renderer, total_content_sections: int = 1):
     st.title(title)
-    if st.button("⬅ Back to main app", type="primary"):
+    col = st.columns([1])[0]
+    if col.button("⬅ Back to main app", type="primary"):
         st.session_state.show_readme_panel = False
         st.session_state.show_dataset_panel = False
         st.rerun()
+    st.divider()
     content_renderer()
+    st.divider()
+    col_bottom = st.columns([1])[0]
+    if col_bottom.button("⬅ Back", key=f"back_bottom_{title}", type="primary"):
+        st.session_state.show_readme_panel = False
+        st.session_state.show_dataset_panel = False
+        st.rerun()
     st.stop()
 
 # Initializing session state
