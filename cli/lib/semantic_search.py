@@ -10,7 +10,7 @@ import os
 
 class SemanticSearch:
     def __init__(self) -> None:
-        self.model = SentenceTransformer('all-MiniLM-L6-v2',local_files_only=True)
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.embeddings = None
         self.documents = None
         self.document_map = {}
