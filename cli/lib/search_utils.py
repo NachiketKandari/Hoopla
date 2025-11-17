@@ -1,5 +1,8 @@
 import json
 import os
+from typing import Optional
+
+from dotenv import load_dotenv
 
 DEFAULT_SEARCH_LIMIT = 5
 DEFAULT_CHUNK_SIZE = 200
@@ -21,15 +24,45 @@ EMBEDDING_PATH = os.path.join(CACHE_DIR, "movie_embeddings.npy")
 CHUNK_EMBEDDING_PATH = os.path.join(CACHE_DIR, "chunk_embeddings.npy")
 CHUNK_METADATA_PATH = os.path.join(CACHE_DIR, "chunk_metadata.json")
 
+load_dotenv()
+
+
+def _load_from_streamlit_secrets(key: str) -> Optional[str]:
+    try:
+        import streamlit as st
+        from streamlit.errors import StreamlitSecretNotFoundError
+    except ImportError:
+        return None
+
+    try:
+        return st.secrets.get(key)
+    except StreamlitSecretNotFoundError:
+        return None
+
+
+def get_gemini_api_key() -> str:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if api_key:
+        return api_key
+
+    api_key = _load_from_streamlit_secrets("GEMINI_API_KEY")
+    if api_key:
+        return api_key
+
+    raise RuntimeError("Missing `GEMINI_API_KEY`. Set it via env var or Streamlit secrets.")
+
+
 def load_movies() -> list[dict]:
     with open(MOVIE_PATH, "r") as file:
         data = json.load(file)
     return data["movies"]
 
+
 def load_testcases() -> list[dict]:
     with open(TESTCASES_PATH, "r") as file:
         data = json.load(file)
     return data["test_cases"]
+
 
 def read_stopwords() -> list[str]:
     with open(STOPWORDS_PATH, "r") as file:
