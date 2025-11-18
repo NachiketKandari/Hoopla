@@ -36,7 +36,7 @@ class MultiModalSearch:
         img_embedding = self.embed_image(image_path)
         similarity_list = []
         for text_embedding, doc in zip(self.text_embeddings, self.documents):
-            similarity = cosine_similarity(img_embedding, text_embedding)
+            similarity = float(cosine_similarity(img_embedding, text_embedding))
             similarity_list.append({
                 "title" : doc['title'],
                 "description" : doc['description'],
