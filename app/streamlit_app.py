@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import sys
 import json
+import logging
 from pathlib import Path
 from typing import Tuple
 
@@ -23,6 +24,24 @@ from app.database import add_chat_history, image_file_to_base64
 import requests
 
 st.set_page_config(page_title="Hoopla", page_icon="🎬", layout="wide")
+
+logger = logging.getLogger("hoopla_streamlit_app")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
+
+def log_event(event: str, level: str = "info", **details) -> None:
+    """Log structured events for server-side debugging."""
+    user = st.session_state.get('username', 'anonymous')
+    payload = {"event": event, "user": user}
+    payload.update({k: v for k, v in details.items() if v is not None})
+    message = " | ".join(f"{key}={value}" for key, value in payload.items())
+    log_method = getattr(logger, level.lower(), logger.info)
+    log_method(message)
 
 
 @st.cache_data(show_spinner=False)
@@ -172,11 +191,13 @@ with st.sidebar:
 
     st.header("Docs & Data")
 
-    if st.button("Open README", use_container_width=True):
+    if st.button("Open README", width="stretch"):
+        log_event("open_readme_clicked")
         st.session_state.show_readme_panel = True
         st.session_state.show_dataset_panel = False
 
-    if st.button("Open Dataset Viewer", use_container_width=True):
+    if st.button("Open Dataset Viewer", width="stretch"):
+        log_event("open_dataset_viewer_clicked")
         st.session_state.show_dataset_panel = True
         st.session_state.show_readme_panel = False
     
@@ -198,16 +219,17 @@ with st.sidebar:
             else:
                 st.info("Using local API (unlimited)")
         
-        if st.button("Logout", use_container_width=True, type="secondary"):
+        if st.button("Logout", width="stretch", type="secondary"):
+            log_event("user_logout")
             logout_user()
             st.rerun()
     else:
         st.warning("Please login to use the app")
-        if st.button("Login", use_container_width=True):
+        if st.button("Login", width="stretch"):
             st.session_state.show_login = True
             st.session_state.show_register = False
             st.rerun()
-        if st.button("Register", use_container_width=True):
+        if st.button("Register", width="stretch"):
             st.session_state.show_register = True
             st.session_state.show_login = False
             st.rerun()
@@ -224,12 +246,15 @@ if not is_user_logged_in():
             submit = st.form_submit_button("Login")
             
             if submit:
+                log_event("login_attempt", attempt_username=username)
                 user_id, message = authenticate_user(username, password)
                 if user_id:
+                    log_event("login_success", username=username)
                     login_user(user_id)
                     st.success(message)
                     st.rerun()
                 else:
+                    log_event("login_failed", username=username)
                     st.error(message)
         
         if st.button("Don't have an account? Register"):
@@ -245,13 +270,16 @@ if not is_user_logged_in():
             submit = st.form_submit_button("Register")
             
             if submit:
+                log_event("register_attempt", attempt_username=username)
                 success, message = register_user(username, password)
                 if success:
+                    log_event("register_success", username=username)
                     st.success(message)
                     st.session_state.show_login = True
                     st.session_state.show_register = False
                     st.rerun()
                 else:
+                    log_event("register_failed", username=username)
                     st.error(message)
         
         if st.button("Already have an account? Login"):
@@ -285,6 +313,7 @@ with tab1:
     query = st.text_input("Enter your query", key="rag_query", placeholder="movies about action and dinosaurs")
     
     if st.button("Generate", key="rag_button"):
+        log_event("rag_generate_requested", rag_type=rag_type, has_query=bool(query))
         if query:
             # Check rate limit
             allowed, message = check_and_consume_rate_limit()
@@ -293,6 +322,7 @@ with tab1:
             else:
                 with st.spinner("Searching and generating response..."):
                     try:
+                        log_event("rag_generate_started", rag_type=rag_type)
                         results = get_results(query)
                         
                         st.subheader("Search Results")
@@ -319,10 +349,13 @@ with tab1:
                             response_text=response,
                             response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", "")} for r in results])
                         )
+                        log_event("rag_generate_completed", rag_type=rag_type, result_count=len(results))
                     except Exception as e:
+                        logger.exception("RAG generation failed")
                         st.error(f"Error: {str(e)}")
         else:
             st.warning("Please enter a query")
+            log_event("rag_generate_missing_query", level="warning", rag_type=rag_type)
 
 # Hybrid Search Tab
 with tab2:
@@ -343,17 +376,22 @@ with tab2:
     with col2:
         limit = st.number_input("Limit", min_value=1, max_value=50, value=DEFAULT_SEARCH_LIMIT, step=1)
     
+    enhance = None
+    rerank = None
+    evaluate = False
     if search_type == "rrf-search":
         enhance = st.selectbox("Query Enhancement (optional)", [None, "spell", "rewrite", "expand"])
         rerank = st.selectbox("Re-ranking Method (optional)", [None, "individual", "batch", "cross_encoder"])
         evaluate = st.checkbox("Evaluate Results")
     
     if st.button("Search", key="hybrid_button"):
+        log_event("hybrid_search_requested", search_type=search_type, rerank=rerank, enhancement=enhance, limit=limit)
         if query:
             # Check rate limit for initial search (only if using SYSTEM API for reranking/evaluation)
             # The search itself doesn't use API, but reranking and evaluation do
             with st.spinner("Searching..."):
                 try:
+                    log_event("hybrid_search_started", search_type=search_type)
                     documents = get_movies_dataset()
                     hybrid_search = HybridSearch(documents)
                     
@@ -607,10 +645,13 @@ with tab2:
                         query_text=query,
                         response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", ""), "score": r.get("rrf_score", r.get("hybrid_score", 0))} for r in results])
                     )
+                    log_event("hybrid_search_completed", search_type=search_type, result_count=len(results))
                 except Exception as e:
+                    logger.exception("Hybrid search failed")
                     st.error(f"Error: {str(e)}")
         else:
             st.warning("Please enter a query")
+            log_event("hybrid_search_missing_query", level="warning", search_type=search_type)
 
 # Semantic Search Tab
 with tab3:
@@ -620,6 +661,7 @@ with tab3:
     limit = st.number_input("Limit", min_value=1, max_value=50, value=DEFAULT_SEARCH_LIMIT, step=1, key="semantic_limit")
     
     if st.button("Search", key="semantic_button"):
+        log_event("semantic_search_requested", limit=limit)
         if query:
             # Semantic search doesn't use API, so no rate limiting needed
             with st.spinner("Searching..."):
@@ -634,12 +676,21 @@ with tab3:
                     save_chat_history(
                         query_type="semantic_search",
                         query_text=query,
-                        response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", ""), "score": r.get("score", 0)} for r in results])
+                        response_results=json.dumps([
+                            {
+                                "title": r.get("title", ""),
+                                "id": r.get("id", ""),
+                                "score": float(r.get("score", 0) or 0)
+                            } for r in results
+                        ])
                     )
+                    log_event("semantic_search_completed", result_count=len(results))
                 except Exception as e:
+                    logger.exception("Semantic search failed")
                     st.error(f"Error: {str(e)}")
         else:
             st.warning("Please enter a query")
+            log_event("semantic_search_missing_query", level="warning")
 
 # Keyword Search Tab
 with tab4:
@@ -649,6 +700,7 @@ with tab4:
     limit = st.number_input("Limit", min_value=1, max_value=50, value=DEFAULT_SEARCH_LIMIT, step=1, key="keyword_limit")
     
     if st.button("Search", key="keyword_button"):
+        log_event("keyword_search_requested", limit=limit)
         if query:
             # Keyword search doesn't use API, so no rate limiting needed
             with st.spinner("Searching..."):
@@ -671,10 +723,13 @@ with tab4:
                         query_text=query,
                         response_results=json.dumps([{"title": doc_map[r['id']].get("title", ""), "id": r.get("id", ""), "score": r.get("score", 0)} for r in results])
                     )
+                    log_event("keyword_search_completed", result_count=len(results))
                 except Exception as e:
+                    logger.exception("Keyword search failed")
                     st.error(f"Error: {str(e)}")
         else:
             st.warning("Please enter a query")
+            log_event("keyword_search_missing_query", level="warning")
 
 # Multimodal Search Tab
 with tab5:
@@ -683,7 +738,8 @@ with tab5:
     uploaded_file = st.file_uploader("Upload an image to search by image", type=['png', 'jpg', 'jpeg'])
     
     if uploaded_file is not None:
-        st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
+        log_event("multimodal_image_uploaded", file_name=uploaded_file.name)
+        st.image(uploaded_file, caption="Uploaded Image", width="stretch")
         
         # Save uploaded file temporarily
         import tempfile
@@ -692,6 +748,7 @@ with tab5:
             tmp_path = tmp_file.name
         
         if st.button("Search", key="multimodal_button"):
+            log_event("multimodal_search_requested", file_name=uploaded_file.name)
             # Multimodal search doesn't use API for generation, so no rate limiting needed
             with st.spinner("Searching with image..."):
                 try:
@@ -713,10 +770,12 @@ with tab5:
                         query_image_base64=image_base64,
                         response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", ""), "score": r.get("score", 0)} for r in results])
                     )
+                    log_event("multimodal_search_completed", result_count=len(results))
                     
                     # Clean up temp file
                     os.unlink(tmp_path)
                 except Exception as e:
+                    logger.exception("Multimodal search failed")
                     st.error(f"Error: {str(e)}")
                     if os.path.exists(tmp_path):
                         os.unlink(tmp_path)
