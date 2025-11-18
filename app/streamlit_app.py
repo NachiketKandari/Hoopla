@@ -1,7 +1,9 @@
 import streamlit as st
 import os
 import sys
+import json
 from pathlib import Path
+from typing import Tuple
 
 # Adding Parent directory to path to import cli modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -13,6 +15,11 @@ from app.model_handler import generate_response, generate_multidoc_summary, gene
 from cli.lib.multimodal_search import MultiModalSearch
 from cli.lib.semantic_search import search_chunked_command
 from cli.lib.keyword_search import InvertedIndex
+from app.auth import (
+    register_user, authenticate_user, check_rate_limit, consume_rate_limit,
+    get_current_user_id, is_user_logged_in, login_user, logout_user
+)
+from app.database import add_chat_history, image_file_to_base64
 import requests
 
 st.set_page_config(page_title="Hoopla", page_icon="🎬", layout="wide")
@@ -59,6 +66,10 @@ if 'show_readme_panel' not in st.session_state:
     st.session_state.show_readme_panel = False
 if 'show_dataset_panel' not in st.session_state:
     st.session_state.show_dataset_panel = False
+if 'show_login' not in st.session_state:
+    st.session_state.show_login = True
+if 'show_register' not in st.session_state:
+    st.session_state.show_register = False
 
 def get_ollama_models():
     try:
@@ -76,6 +87,65 @@ def load_ollama_models():
         st.session_state.ollama_models = models
         if models and not st.session_state.selected_ollama_model:
             st.session_state.selected_ollama_model = models[0] if models else None
+
+def check_and_consume_rate_limit() -> Tuple[bool, str]:
+    """
+    Check and consume rate limit for current user.
+    Returns (allowed, message)
+    """
+    user_id = get_current_user_id()
+    if not user_id:
+        return False, "User not logged in"
+    
+    is_system_api = st.session_state.model_type == "API"
+    allowed, requests_left = check_rate_limit(user_id, is_system_api)
+    
+    if not allowed:
+        return False, f"Daily limit reached. You have used all 50 requests for today. Please try again tomorrow or use local API (Ollama)."
+    
+    # Consume the rate limit
+    if is_system_api:
+        success = consume_rate_limit(user_id, is_system_api)
+        if not success:
+            return False, "Failed to consume rate limit. Please try again."
+    
+    return True, ""
+
+def save_chat_history(query_type: str, query_text: str = None, query_image_base64: str = None, 
+                      response_text: str = None, response_results: str = None):
+    """Save chat history for current user."""
+    user_id = get_current_user_id()
+    if not user_id:
+        return
+    
+    model_type = st.session_state.model_type
+    if model_type == "local" and st.session_state.selected_ollama_model:
+        model_type = f"local:{st.session_state.selected_ollama_model}"
+    
+    add_chat_history(
+        user_id=user_id,
+        query_type=query_type,
+        query_text=query_text,
+        query_image_base64=query_image_base64,
+        response_text=response_text,
+        response_results=response_results,
+        model_type=model_type
+    )
+
+def check_rate_limit_for_api_call() -> bool:
+    """Check rate limit before making a SYSTEM API call. Returns True if allowed."""
+    user_id = get_current_user_id()
+    if not user_id:
+        return False
+    
+    is_system_api = st.session_state.model_type == "API"
+    if not is_system_api:
+        return True  # No limit for local API
+    
+    allowed, _ = check_rate_limit(user_id, is_system_api)
+    if allowed:
+        consume_rate_limit(user_id, is_system_api)
+    return allowed
 
 # Sidebar for model selection
 with st.sidebar:
@@ -109,8 +179,87 @@ with st.sidebar:
     if st.button("Open Dataset Viewer", use_container_width=True):
         st.session_state.show_dataset_panel = True
         st.session_state.show_readme_panel = False
- 
     
+    st.divider()
+    
+    # Authentication section in sidebar
+    st.header("Authentication")
+    if is_user_logged_in():
+        st.success(f"Logged in as: **{st.session_state.get('username', 'Unknown')}**")
+        user_id = get_current_user_id()
+        if user_id:
+            is_system_api = st.session_state.model_type == "API"
+            allowed, requests_left = check_rate_limit(user_id, is_system_api)
+            if is_system_api:
+                if allowed:
+                    st.info(f"Requests left today: **{requests_left}**")
+                else:
+                    st.error("Daily limit reached (50 requests/day)")
+            else:
+                st.info("Using local API (unlimited)")
+        
+        if st.button("Logout", use_container_width=True, type="secondary"):
+            logout_user()
+            st.rerun()
+    else:
+        st.warning("Please login to use the app")
+        if st.button("Login", use_container_width=True):
+            st.session_state.show_login = True
+            st.session_state.show_register = False
+            st.rerun()
+        if st.button("Register", use_container_width=True):
+            st.session_state.show_register = True
+            st.session_state.show_login = False
+            st.rerun()
+
+# Authentication UI (Login/Register)
+if not is_user_logged_in():
+    st.title("🎬 Hoopla - Login Required")
+    
+    if st.session_state.show_login:
+        st.header("Login")
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Login")
+            
+            if submit:
+                user_id, message = authenticate_user(username, password)
+                if user_id:
+                    login_user(user_id)
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+        
+        if st.button("Don't have an account? Register"):
+            st.session_state.show_register = True
+            st.session_state.show_login = False
+            st.rerun()
+    
+    elif st.session_state.show_register:
+        st.header("Register")
+        with st.form("register_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Register")
+            
+            if submit:
+                success, message = register_user(username, password)
+                if success:
+                    st.success(message)
+                    st.session_state.show_login = True
+                    st.session_state.show_register = False
+                    st.rerun()
+                else:
+                    st.error(message)
+        
+        if st.button("Already have an account? Login"):
+            st.session_state.show_login = True
+            st.session_state.show_register = False
+            st.rerun()
+    
+    st.stop()
 
 if st.session_state.get("show_readme_panel"):
     def _render_readme():
@@ -137,28 +286,41 @@ with tab1:
     
     if st.button("Generate", key="rag_button"):
         if query:
-            with st.spinner("Searching and generating response..."):
-                try:
-                    results = get_results(query)
-                    
-                    st.subheader("Search Results")
-                    for i, res in enumerate(results, 1):
-                        st.write(f"{i}. {res['title']}")
-                    
-                    st.subheader("Generated Response")
-                    
-                    if rag_type == "rag":
-                        response = generate_response(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
-                    elif rag_type == "summarize":
-                        response = generate_multidoc_summary(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
-                    elif rag_type == "citations":
-                        response = generate_citations(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
-                    elif rag_type == "question":
-                        response = generate_answer(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
-                    
-                    st.write(response)
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+            # Check rate limit
+            allowed, message = check_and_consume_rate_limit()
+            if not allowed:
+                st.error(message)
+            else:
+                with st.spinner("Searching and generating response..."):
+                    try:
+                        results = get_results(query)
+                        
+                        st.subheader("Search Results")
+                        for i, res in enumerate(results, 1):
+                            st.write(f"{i}. {res['title']}")
+                        
+                        st.subheader("Generated Response")
+                        
+                        if rag_type == "rag":
+                            response = generate_response(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
+                        elif rag_type == "summarize":
+                            response = generate_multidoc_summary(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
+                        elif rag_type == "citations":
+                            response = generate_citations(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
+                        elif rag_type == "question":
+                            response = generate_answer(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
+                        
+                        st.write(response)
+                        
+                        # Save chat history
+                        save_chat_history(
+                            query_type=f"rag_{rag_type}",
+                            query_text=query,
+                            response_text=response,
+                            response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", "")} for r in results])
+                        )
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
         else:
             st.warning("Please enter a query")
 
@@ -188,6 +350,8 @@ with tab2:
     
     if st.button("Search", key="hybrid_button"):
         if query:
+            # Check rate limit for initial search (only if using SYSTEM API for reranking/evaluation)
+            # The search itself doesn't use API, but reranking and evaluation do
             with st.spinner("Searching..."):
                 try:
                     documents = get_movies_dataset()
@@ -205,7 +369,13 @@ with tab2:
                             from cli.lib.reranking import rerank_individual, rerank_batch, rerank_cross_encoder
                             
                             if rerank == "individual":
+                                # Check rate limit for each API call
                                 for doc in results:
+                                    if st.session_state.model_type == "API":
+                                        if not check_rate_limit_for_api_call():
+                                            st.error("Rate limit reached. Cannot complete reranking.")
+                                            break
+                                    
                                     from app.model_handler import generate_with_gemini, generate_with_ollama
                                     prompt = f"""Rate how well this movie matches the search query.
 
@@ -229,25 +399,47 @@ with tab2:
                                     doc['score'] = int((response_text or "").strip().strip('"'))
                                 results = sorted(results, key=lambda x: x['score'], reverse=True)[:limit]
                             elif rerank == "batch":
-                                from app.model_handler import generate_with_gemini, generate_with_ollama
-                                prompt = f"""Rank these movies by relevance to the search query.
+                                # Check rate limit before API call
+                                if st.session_state.model_type == "API":
+                                    if not check_rate_limit_for_api_call():
+                                        st.error("Rate limit reached. Cannot complete reranking.")
+                                    else:
+                                        from app.model_handler import generate_with_gemini, generate_with_ollama
+                                        prompt = f"""Rank these movies by relevance to the search query.
 
-                                Query: "{query}"
+                                        Query: "{query}"
 
-                                Movies:
-                                {results}
+                                        Movies:
+                                        {results}
 
-                                Return ONLY the IDs in order of relevance (best match first). Return a valid JSON list, nothing else. Don't put it inside a json markdown. For example, the output should be like :
+                                        Return ONLY the IDs in order of relevance (best match first). Return a valid JSON list, nothing else. Don't put it inside a json markdown. For example, the output should be like :
 
-                                [75, 12, 34, 2, 1]
-                                """
-                                
-                                if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
-                                    json_response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
+                                        [75, 12, 34, 2, 1]
+                                        """
+                                        
+                                        if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
+                                            json_response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
+                                        else:
+                                            json_response_text = generate_with_gemini(prompt)
                                 else:
-                                    json_response_text = generate_with_gemini(prompt)
+                                    from app.model_handler import generate_with_gemini, generate_with_ollama
+                                    prompt = f"""Rank these movies by relevance to the search query.
+
+                                    Query: "{query}"
+
+                                    Movies:
+                                    {results}
+
+                                    Return ONLY the IDs in order of relevance (best match first). Return a valid JSON list, nothing else. Don't put it inside a json markdown. For example, the output should be like :
+
+                                    [75, 12, 34, 2, 1]
+                                    """
+                                    
+                                    if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
+                                        json_response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
+                                    else:
+                                        json_response_text = generate_with_gemini(prompt)
                                 
-                                import json
                                 batch_results = json.loads(json_response_text)
                                 docs = []
                                 for result in batch_results[:limit]:
@@ -283,48 +475,102 @@ with tab2:
                             st.write(f"   {res['description'][:200]}...")
                             st.divider()
                         
+                        # Save chat history for rrf search (before evaluation if it happens)
+                        save_chat_history(
+                            query_type=f"hybrid_{search_type}",
+                            query_text=query,
+                            response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", ""), "score": r.get("rrf_score", 0)} for r in results])
+                        )
+                        
                         if evaluate:
-                            from cli.lib.reranking import format_results
-                            from app.model_handler import generate_with_gemini, generate_with_ollama
-                            import json
-                            
-                            with st.expander("Evaluation Results"):
-                                formatted_results = format_results(results)
-                                prompt = f"""Rate how relevant each result is to this query on a 0-3 scale:
-                                
-                                Query: "{query}"
-
-                                
-                                Results: 
-                                
-                                {chr(10).join(formatted_results.split(chr(10)))}
-
-                                
-                                Scale:
-                                
-                                - 3: Highly relevant
-                                
-                                - 2: Relevant
-                                
-                                - 1: Marginally relevant
-                                
-                                - 0: Not relevant
-
-                                
-                                Do NOT give any numbers out of 0, 1, 2 or 3.
-
-                                
-                                Return ONLY the scores in teh same order you were given the documents. Return a valid JSON
-                                list, nothing else. Don't use markdown in your response. For example: 
-                                
-                                [2, 0, 3, 2, 0, 1]
-                                
-                                """
-                                
-                                if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
-                                    response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
+                            # Check rate limit before evaluation API call
+                            if st.session_state.model_type == "API":
+                                if not check_rate_limit_for_api_call():
+                                    st.error("Rate limit reached. Cannot complete evaluation.")
                                 else:
-                                    response_text = generate_with_gemini(prompt)
+                                    from cli.lib.reranking import format_results
+                                    from app.model_handler import generate_with_gemini, generate_with_ollama
+                                    import json
+                                    
+                                    with st.expander("Evaluation Results"):
+                                        formatted_results = format_results(results)
+                                        prompt = f"""Rate how relevant each result is to this query on a 0-3 scale:
+                                        
+                                        Query: "{query}"
+
+                                        
+                                        Results: 
+                                        
+                                        {chr(10).join(formatted_results.split(chr(10)))}
+
+                                        
+                                        Scale:
+                                        
+                                        - 3: Highly relevant
+                                        
+                                        - 2: Relevant
+                                        
+                                        - 1: Marginally relevant
+                                        
+                                        - 0: Not relevant
+
+                                        
+                                        Do NOT give any numbers out of 0, 1, 2 or 3.
+
+                                        
+                                        Return ONLY the scores in teh same order you were given the documents. Return a valid JSON
+                                        list, nothing else. Don't use markdown in your response. For example: 
+                                        
+                                        [2, 0, 3, 2, 0, 1]
+                                        
+                                        """
+                                        
+                                        if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
+                                            response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
+                                        else:
+                                            response_text = generate_with_gemini(prompt)
+                            else:
+                                from cli.lib.reranking import format_results
+                                from app.model_handler import generate_with_gemini, generate_with_ollama
+                                import json
+                                
+                                with st.expander("Evaluation Results"):
+                                    formatted_results = format_results(results)
+                                    prompt = f"""Rate how relevant each result is to this query on a 0-3 scale:
+                                    
+                                    Query: "{query}"
+
+                                    
+                                    Results: 
+                                    
+                                    {chr(10).join(formatted_results.split(chr(10)))}
+
+                                    
+                                    Scale:
+                                    
+                                    - 3: Highly relevant
+                                    
+                                    - 2: Relevant
+                                    
+                                    - 1: Marginally relevant
+                                    
+                                    - 0: Not relevant
+
+                                    
+                                    Do NOT give any numbers out of 0, 1, 2 or 3.
+
+                                    
+                                    Return ONLY the scores in teh same order you were given the documents. Return a valid JSON
+                                    list, nothing else. Don't use markdown in your response. For example: 
+                                    
+                                    [2, 0, 3, 2, 0, 1]
+                                    
+                                    """
+                                    
+                                    if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
+                                        response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
+                                    else:
+                                        response_text = generate_with_gemini(prompt)
                                 
                                 if not response_text:
                                     st.error("Failed to get evaluation response from the model. Please try again.")
@@ -354,6 +600,13 @@ with tab2:
                             st.write(f"   Hybrid Score: {res['hybrid_score']:.3f}")
                             st.write(f"   {res['description'][:200]}...")
                             st.divider()
+                    
+                    # Save chat history for hybrid search
+                    save_chat_history(
+                        query_type=f"hybrid_{search_type}",
+                        query_text=query,
+                        response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", ""), "score": r.get("rrf_score", r.get("hybrid_score", 0))} for r in results])
+                    )
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
         else:
@@ -368,6 +621,7 @@ with tab3:
     
     if st.button("Search", key="semantic_button"):
         if query:
+            # Semantic search doesn't use API, so no rate limiting needed
             with st.spinner("Searching..."):
                 try:
                     results = search_chunked_command(query, limit)
@@ -375,6 +629,13 @@ with tab3:
                         st.write(f"{i}. **{res['title']}** (score: {res['score']:.4f})")
                         st.write(f"   {res['description'][:200]}...")
                         st.divider()
+                    
+                    # Save chat history
+                    save_chat_history(
+                        query_type="semantic_search",
+                        query_text=query,
+                        response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", ""), "score": r.get("score", 0)} for r in results])
+                    )
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
         else:
@@ -389,6 +650,7 @@ with tab4:
     
     if st.button("Search", key="keyword_button"):
         if query:
+            # Keyword search doesn't use API, so no rate limiting needed
             with st.spinner("Searching..."):
                 try:
                     idx = InvertedIndex()
@@ -402,6 +664,13 @@ with tab4:
                         st.write(f"{i}. **{doc['title']}** (score: {res['score']:.4f})")
                         st.write(f"   {doc['description'][:200]}...")
                         st.divider()
+                    
+                    # Save chat history
+                    save_chat_history(
+                        query_type="keyword_search",
+                        query_text=query,
+                        response_results=json.dumps([{"title": doc_map[r['id']].get("title", ""), "id": r.get("id", ""), "score": r.get("score", 0)} for r in results])
+                    )
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
         else:
@@ -423,6 +692,7 @@ with tab5:
             tmp_path = tmp_file.name
         
         if st.button("Search", key="multimodal_button"):
+            # Multimodal search doesn't use API for generation, so no rate limiting needed
             with st.spinner("Searching with image..."):
                 try:
                     documents = get_movies_dataset()
@@ -435,6 +705,14 @@ with tab5:
                         st.write(f"{i}. **{res['title']}** (score: {res['score']:.4f})")
                         st.write(f"   {res['description'][:200]}...")
                         st.divider()
+                    
+                    # Convert image to base64 and save chat history
+                    image_base64 = image_file_to_base64(uploaded_file)
+                    save_chat_history(
+                        query_type="multimodal_search",
+                        query_image_base64=image_base64,
+                        response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", ""), "score": r.get("score", 0)} for r in results])
+                    )
                     
                     # Clean up temp file
                     os.unlink(tmp_path)

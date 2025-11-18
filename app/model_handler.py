@@ -94,7 +94,7 @@ def generate_citations(query: str, results: list[dict], model_type: str = "API",
         return generate_with_gemini(prompt)
 
 def generate_answer(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None) -> str:
-    prompt = f"""Answer the following question based on the provided documents.
+    prompt = f"""Answer the following question based on the provided documents. Answer in a SFW manner only.
 
     Question: {query}
 
