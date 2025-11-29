@@ -186,8 +186,11 @@ def check_rate_limit_for_api_call() -> bool:
         consume_rate_limit(user_id, is_system_api)
     return allowed
 
+
+
 # Sidebar for model selection
 with st.sidebar:
+    
     st.header("Model Configuration")
     
     model_options = {
@@ -237,8 +240,6 @@ with st.sidebar:
             st.warning("Please enter a valid API key")
     else:
         st.info("Using System API (50 requests/day)")
-    
-    st.divider()
 
     st.divider()
 
@@ -254,10 +255,7 @@ with st.sidebar:
         st.session_state.show_dataset_panel = True
         st.session_state.show_readme_panel = False
     
-
-    
     st.divider()
-    
     # Authentication section in sidebar
     st.header("Authentication")
     if is_user_logged_in():
@@ -290,7 +288,8 @@ with st.sidebar:
             st.session_state.show_register = True
             st.session_state.show_login = False
             st.rerun()
-
+    
+    
 # Authentication UI (Login/Register)
 if not is_user_logged_in():
     st.title("🎬 Hoopla - Login Required")
