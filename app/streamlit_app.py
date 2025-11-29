@@ -16,6 +16,7 @@ from app.model_handler import generate_response, generate_multidoc_summary, gene
 from cli.lib.multimodal_search import MultiModalSearch
 from cli.lib.semantic_search import search_chunked_command
 from cli.lib.keyword_search import InvertedIndex
+from cli.lib.codebase_rag import CodebaseRAG, rewrite_query
 from app.auth import (
     register_user, authenticate_user, check_rate_limit, consume_rate_limit,
     get_current_user_id, is_user_logged_in, login_user, logout_user, is_admin
@@ -96,6 +97,8 @@ if 'show_register' not in st.session_state:
     st.session_state.show_register = False
 if 'chat_messages' not in st.session_state:
     st.session_state.chat_messages = []
+if 'thinking_mode' not in st.session_state:
+    st.session_state.thinking_mode = False
 
 def get_ollama_models():
     try:
@@ -201,8 +204,22 @@ with st.sidebar:
             break
             
     selected_label = st.selectbox("Select Model Source", list(model_options.keys()), index=list(model_options.keys()).index(current_label))
-    st.session_state.model_type = model_options[selected_label]
+    # Model Selection
+    st.sidebar.subheader("🤖 Model Selection")
+    model_type_label = st.sidebar.selectbox(
+        "Choose Model",
+        ["API (Gemini 2.0 Flash)", "Custom Gemini API", "Local (Ollama)"],
+        index=0 if st.session_state.model_type == "API" else (1 if st.session_state.model_type == "custom_gemini" else 2)
+    )
     
+    # Update session state based on selection
+    if "Custom" in model_type_label:
+        st.session_state.model_type = "custom_gemini"
+    elif "Local" in model_type_label:
+        st.session_state.model_type = "local"
+    else:
+        st.session_state.model_type = "API"
+
     if st.session_state.model_type == "local":
         load_ollama_models()
         if st.session_state.ollama_models:
@@ -223,6 +240,8 @@ with st.sidebar:
     
     st.divider()
 
+    st.divider()
+
     st.header("Docs & Data")
 
     if st.button("Open README", width="stretch"):
@@ -234,6 +253,8 @@ with st.sidebar:
         log_event("open_dataset_viewer_clicked")
         st.session_state.show_dataset_panel = True
         st.session_state.show_readme_panel = False
+    
+
     
     st.divider()
     
@@ -361,13 +382,20 @@ else:
 
 # Chat Tab
 with tab1:
-    st.header("Chat with Hoopla")
-    st.caption("Have a conversation to discover movies from the dataset! Ask follow-up questions, refine your search, or get personalized recommendations.")
+    st.header("💬 Chat with Hoopla")
+    st.caption("Ask questions about the Hoopla codebase. Toggle Thinking Mode for more accurate results using AI re-ranking.")
+    
+    # Thinking Mode toggle below caption
+    st.session_state.thinking_mode = st.checkbox(
+        "🧠 Thinking Mode",
+        value=st.session_state.thinking_mode,
+        help="Enable re-ranking for more accurate results (slower)"
+    )
     
     # Clear chat button - right aligned
     col1, col2, col3 = st.columns([6, 1, 1])
     with col3:
-        if st.button("🗑️ Clear Chat", use_container_width=True):
+        if st.button("🗑️ Clear Chat", width="stretch"):
             # Soft delete conversations in database
             user_id = get_current_user_id()
             if user_id:
@@ -378,17 +406,29 @@ with tab1:
             st.success("Chat cleared!")
             st.rerun()
     
+    # Search Mode Toggle
+    st.caption("🔍 Search Mode")
+    search_mode_display = st.radio(
+        "Search Mode",
+        ["HyDE (Concept Search)", "Code (Exact Search)"],
+        horizontal=True,
+        label_visibility="collapsed",
+        help="HyDE matches concepts/descriptions. Code matches variable names and structure."
+    )
+    search_mode = "hyde" if "HyDE" in search_mode_display else "code"
+    
     # Display chat messages
     for message in st.session_state.chat_messages:
         with st.chat_message(message["role"]):
             st.write(message["content"])
             if "results" in message and message["results"]:
-                with st.expander("📽️ Movie Suggestions"):
-                    for i, movie in enumerate(message["results"], 1):
-                        st.write(f"{i}. **{movie.get('title', 'Unknown')}**")
+                with st.expander("📄 Relevant Code Chunks"):
+                    for i, res in enumerate(message["results"], 1):
+                        st.markdown(f"**{i}. {res['filename']}:{res['name']}** (Score: {res['score']:.4f})")
+                        st.code(res['content'], language='python')
     
     # Chat input
-    if prompt := st.chat_input("Ask me about movies... (e.g., 'Find me a sci-fi movie')"):
+    if prompt := st.chat_input("Ask me about the codebase..."):
         log_event("chat_message_sent", has_query=bool(prompt))
         
         # Check rate limit
@@ -405,7 +445,7 @@ with tab1:
             
             # Generate response
             with st.chat_message("assistant"):
-                with st.spinner("Searching for movies..."):
+                with st.spinner("Searching codebase..."):
                     try:
                         # Build context from chat history
                         chat_context = ""
@@ -417,72 +457,98 @@ with tab1:
                                 chat_context += f"{role}: {msg['content']}\n"
                             chat_context += "\n"
                         
-                        # Perform search
-                        results = get_results(prompt)
+                        # Codebase RAG Logic
+                        rag = CodebaseRAG()
                         
-                        # Generate contextual response
+                        # Rewrite query for better search
                         api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                        search_query = rewrite_query(prompt, api_key)
+                        if search_query != prompt:
+                            with st.expander("🔍 Search Details"):
+                                st.caption(f"Rewritten Query: {search_query}")
                         
-                        enhanced_prompt = f"""{chat_context}Current question: {prompt}
+                        results = rag.search(
+                            search_query,
+                            limit=10,
+                            score_threshold=0.01,  # RRF score threshold
+                            use_reranking=st.session_state.thinking_mode,
+                            mode=search_mode
+                        )
+                        
+                        # Format results for prompt
+                        context_str = ""
+                        for res in results:
+                            # Safely get score, defaulting to 0.0 if missing
+                            score = res.get('score', 0.0)
+                            context_str += f"File: {res['filename']}\nFunction: {res['name']}\nScore: {score:.4f}\nCode:\n{res['content']}\n\n"
+                        
+                        enhanced_prompt = f"""{chat_context}
+Original Question: {prompt}
+Rewritten Query (for technical retrieval): {search_query}
 
-Based on the movie search results below, provide a helpful, conversational response. If this is a follow-up question, reference the previous conversation. Suggest 2-3 specific movies from the results that match what the user is looking for. Be concise but enthusiastic.
+You are an expert coding assistant for the Hoopla codebase. 
+I have retrieved relevant code chunks based on the rewritten query above, which expands the original question into technical terms.
 
-Search Results:
-{json.dumps([{"id": r.get("id"), "title": r.get("title"), "description": r.get("description", "")[:200]} for r in results], indent=2)}
+Use the following code chunks to answer the user's ORIGINAL QUESTION.
+- The "Score" indicates relevance (higher is better).
+- Cite the file and function name when explaining code.
+- If the code chunks don't contain the answer, say so, but try to be helpful based on the function names and descriptions.
+
+Code Chunks:
+{context_str}
 
 Your response:"""
                         
-                        try:
-                            if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
-                                from app.model_handler import generate_with_ollama
-                                response = generate_with_ollama(enhanced_prompt, st.session_state.selected_ollama_model)
-                            else:
-                                from app.model_handler import generate_with_gemini
-                                response = generate_with_gemini(enhanced_prompt, api_key=api_key)
+                        # Generate response
+                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                        if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
+                            from app.model_handler import generate_with_ollama
+                            response = generate_with_ollama(enhanced_prompt, st.session_state.selected_ollama_model)
+                        else:
+                            from app.model_handler import generate_with_gemini
+                            response = generate_with_gemini(enhanced_prompt, api_key=api_key)
+                        
+                        st.write(response)
+                        
+                        # Show code suggestions
+                        if results:
+                            with st.expander("📄 Relevant Code Chunks"):
+                                for i, res in enumerate(results, 1):
+                                    st.markdown(f"**{i}. {res['filename']}:{res['name']}** (Score: {res['score']:.4f})")
+                                    st.code(res['content'], language='python')
+
+                        # Add assistant message to chat
+                        st.session_state.chat_messages.append({
+                            "role": "assistant",
+                            "content": response,
+                            "results": results # Store chunks as results
+                        })
+                        
+                        # Save to database
+                        user_id = get_current_user_id()
+                        if user_id:
+                            model_type_str = st.session_state.model_type
+                            if model_type_str == "local" and st.session_state.selected_ollama_model:
+                                model_type_str = f"local:{st.session_state.selected_ollama_model}"
+                            elif model_type_str == "custom_gemini":
+                                model_type_str = "gemini:custom"
                             
-                            st.write(response)
+                            add_conversation(
+                                user_id=user_id,
+                                mode="chat",
+                                query=prompt,
+                                response=response,
+                                model_type=model_type_str
+                            )
+                        
+                        log_event("chat_message_completed", result_count=len(results))
                             
-                            # Show movie suggestions
-                            if results:
-                                with st.expander("📽️ Movie Suggestions"):
-                                    for i, movie in enumerate(results[:5], 1):
-                                        st.write(f"{i}. **{movie.get('title', 'Unknown')}**")
-                            
-                            # Add assistant message to chat
-                            st.session_state.chat_messages.append({
-                                "role": "assistant",
-                                "content": response,
-                                "results": results[:5]
-                            })
-                            
-                            # Save to database
-                            user_id = get_current_user_id()
-                            if user_id:
-                                model_type_str = st.session_state.model_type
-                                if model_type_str == "local" and st.session_state.selected_ollama_model:
-                                    model_type_str = f"local:{st.session_state.selected_ollama_model}"
-                                elif model_type_str == "custom_gemini":
-                                    model_type_str = "gemini:custom"
-                                
-                                add_conversation(
-                                    user_id=user_id,
-                                    mode="chat",
-                                    query=prompt,
-                                    response=response,
-                                    model_type=model_type_str
-                                )
-                            
-                            log_event("chat_message_completed", result_count=len(results))
-                            
-                        except InvalidAPIKeyError as e:
-                            logger.error(f"Invalid API Key in chat: {str(e)}")
-                            st.error("⚠️ **Invalid API Key**: Please check your Gemini API key in the sidebar configuration.")
-                        except Exception as e:
-                            logger.exception("Chat generation failed")
-                            st.error(f"Error generating response: {str(e)}")
+                    except InvalidAPIKeyError as e:
+                        logger.error(f"Invalid API Key in chat: {str(e)}")
+                        st.error("⚠️ **Invalid API Key**: Please check your Gemini API key in the sidebar configuration.")
                     except Exception as e:
-                        logger.exception("Chat search failed")
-                        st.error(f"Error searching for movies: {str(e)}")
+                        logger.exception("Chat generation failed")
+                        st.error(f"Error generating response: {str(e)}")
 
 # RAG Tab
 with tab2:
@@ -1054,7 +1120,7 @@ if tab7 is not None and is_admin():
             import pandas as pd
             users_df = pd.DataFrame(users)
             users_df = users_df[['id', 'username', 'requests_left', 'is_admin', 'created_at']]
-            st.dataframe(users_df, use_container_width=True, hide_index=True)
+            st.dataframe(users_df, width="stretch", hide_index=True)
         else:
             st.info("No users found")
         

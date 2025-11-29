@@ -4,7 +4,7 @@ This creates the admin panel interface for viewing users and conversations.
 """
 import streamlit as st
 import pandas as pd
-from app.database import get_all_users, get_user_conversations, get_db_stats
+from app.database import get_all_users, get_user_conversations, get_db_stats, reset_user_requests
 
 
 def render_admin_panel():
@@ -43,7 +43,7 @@ def render_admin_panel():
         # Create DataFrame for better display
         users_df = pd.DataFrame(users)
         users_df = users_df[['id', 'username', 'requests_left', 'is_admin', 'created_at']]
-        st.dataframe(users_df, use_container_width=True, hide_index=True)
+        st.dataframe(users_df, width="stretch", hide_index=True)
     else:
         st.info("No users found")
     
@@ -59,7 +59,24 @@ def render_admin_panel():
         
         include_deleted = st.checkbox("Include deleted conversations", value=False)
         
-        if st.button("Load Conversations"):
+        include_deleted = st.checkbox("Include deleted conversations", value=False)
+        
+        col_actions1, col_actions2 = st.columns(2)
+        
+        with col_actions1:
+            if st.button("Load Conversations", width="stretch"):
+                st.session_state.admin_load_conv = True
+        
+        with col_actions2:
+            if st.button("🔄 Reset Quota (to 50)", width="stretch"):
+                user_id = user_options[selected_user]
+                if reset_user_requests(user_id):
+                    st.success(f"Quota reset for user {selected_user}!")
+                    st.rerun()
+                else:
+                    st.error("Failed to reset quota.")
+
+        if st.session_state.get('admin_load_conv', False):
             user_id = user_options[selected_user]
             conversations = get_user_conversations(user_id, include_deleted=include_deleted)
             

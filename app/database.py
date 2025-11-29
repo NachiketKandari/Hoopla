@@ -147,7 +147,7 @@ def create_admin_user():
             WHERE username = ?
         """, (password_hash, admin_username))
         conn.commit()
-        print(f"✅ Admin user '{admin_username}' updated successfully")
+        print(f"✅ Server Started Successfully")
     
     conn.close()
 
