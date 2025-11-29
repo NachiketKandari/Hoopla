@@ -12,15 +12,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from cli.lib.hybrid_search import HybridSearch, rrf_search_command, weighted_search_command
 from cli.lib.search_utils import load_movies, DEFAULT_SEARCH_LIMIT, DEFAULT_ALPHA_VALUE, DEFAULT_K_VALUE
 from cli.lib.augmented_generation import get_results
-from app.model_handler import generate_response, generate_multidoc_summary, generate_citations, generate_answer
+from app.model_handler import generate_response, generate_multidoc_summary, generate_citations, generate_answer, InvalidAPIKeyError
 from cli.lib.multimodal_search import MultiModalSearch
 from cli.lib.semantic_search import search_chunked_command
 from cli.lib.keyword_search import InvertedIndex
+from cli.lib.codebase_rag import CodebaseRAG, rewrite_query
 from app.auth import (
     register_user, authenticate_user, check_rate_limit, consume_rate_limit,
-    get_current_user_id, is_user_logged_in, login_user, logout_user
+    get_current_user_id, is_user_logged_in, login_user, logout_user, is_admin
 )
-from app.database import add_chat_history, image_file_to_base64
+from app.database import (
+    add_chat_history, image_file_to_base64, add_conversation, get_recent_chat_messages, 
+    mark_conversations_as_deleted, get_all_users, get_user_conversations, get_db_stats
+)
 import requests
 
 st.set_page_config(page_title="Hoopla", page_icon="🎬", layout="wide")
@@ -53,7 +57,7 @@ def get_readme_content() -> str:
         return "README.md not found."
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)  # Cache for 1 hour to reduce file I/O
 def get_movies_dataset() -> list[dict]:
     return load_movies()
 
@@ -77,6 +81,8 @@ def render_alt_page(title: str, content_renderer, total_content_sections: int = 
 # Initializing session state
 if 'model_type' not in st.session_state:
     st.session_state.model_type = "API"
+if 'custom_api_key' not in st.session_state:
+    st.session_state.custom_api_key = ""
 if 'ollama_models' not in st.session_state:
     st.session_state.ollama_models = []
 if 'selected_ollama_model' not in st.session_state:
@@ -89,6 +95,10 @@ if 'show_login' not in st.session_state:
     st.session_state.show_login = True
 if 'show_register' not in st.session_state:
     st.session_state.show_register = False
+if 'chat_messages' not in st.session_state:
+    st.session_state.chat_messages = []
+if 'thinking_mode' not in st.session_state:
+    st.session_state.thinking_mode = False
 
 def get_ollama_models():
     try:
@@ -116,11 +126,15 @@ def check_and_consume_rate_limit() -> Tuple[bool, str]:
     if not user_id:
         return False, "User not logged in"
     
+    # No rate limit for custom Gemini API or local models
+    if st.session_state.model_type in ["custom_gemini", "local"]:
+        return True, ""
+    
     is_system_api = st.session_state.model_type == "API"
     allowed, requests_left = check_rate_limit(user_id, is_system_api)
     
     if not allowed:
-        return False, f"Daily limit reached. You have used all 50 requests for today. Please try again tomorrow or use local API (Ollama)."
+        return False, f"Daily limit reached. You have used all 50 requests for today. Please try again tomorrow or use local API (Ollama) or your own Gemini API key."
     
     # Consume the rate limit
     if is_system_api:
@@ -140,6 +154,8 @@ def save_chat_history(query_type: str, query_text: str = None, query_image_base6
     model_type = st.session_state.model_type
     if model_type == "local" and st.session_state.selected_ollama_model:
         model_type = f"local:{st.session_state.selected_ollama_model}"
+    elif model_type == "custom_gemini":
+        model_type = "gemini:custom"
     
     add_chat_history(
         user_id=user_id,
@@ -157,6 +173,10 @@ def check_rate_limit_for_api_call() -> bool:
     if not user_id:
         return False
     
+    # No rate limit for custom Gemini API or local models
+    if st.session_state.model_type in ["custom_gemini", "local"]:
+        return True
+
     is_system_api = st.session_state.model_type == "API"
     if not is_system_api:
         return True  # No limit for local API
@@ -170,10 +190,37 @@ def check_rate_limit_for_api_call() -> bool:
 with st.sidebar:
     st.header("Model Configuration")
     
-    model_type = st.radio("Select Model Type", ["API", "local"], index=0 if st.session_state.model_type == "API" else 1)
-    st.session_state.model_type = model_type
+    model_options = {
+        "System (Limited)": "API",
+        "Gemini API (Custom Key)": "custom_gemini",
+        "Ollama (Local)": "local"
+    }
     
-    if model_type == "local":
+    # Reverse mapping to find index
+    current_label = "System (Limited)"
+    for label, value in model_options.items():
+        if value == st.session_state.model_type:
+            current_label = label
+            break
+            
+    selected_label = st.selectbox("Select Model Source", list(model_options.keys()), index=list(model_options.keys()).index(current_label))
+    # Model Selection
+    st.sidebar.subheader("🤖 Model Selection")
+    model_type_label = st.sidebar.selectbox(
+        "Choose Model",
+        ["API (Gemini 2.0 Flash)", "Custom Gemini API", "Local (Ollama)"],
+        index=0 if st.session_state.model_type == "API" else (1 if st.session_state.model_type == "custom_gemini" else 2)
+    )
+    
+    # Update session state based on selection
+    if "Custom" in model_type_label:
+        st.session_state.model_type = "custom_gemini"
+    elif "Local" in model_type_label:
+        st.session_state.model_type = "local"
+    else:
+        st.session_state.model_type = "API"
+
+    if st.session_state.model_type == "local":
         load_ollama_models()
         if st.session_state.ollama_models:
             st.session_state.selected_ollama_model = st.selectbox(
@@ -184,9 +231,15 @@ with st.sidebar:
         else:
             st.warning("No Ollama models found. Make sure Ollama is running on localhost:11434")
             st.session_state.selected_ollama_model = None
+    elif st.session_state.model_type == "custom_gemini":
+        st.session_state.custom_api_key = st.text_input("Enter Gemini API Key", type="password", value=st.session_state.custom_api_key)
+        if not st.session_state.custom_api_key:
+            st.warning("Please enter a valid API key")
     else:
-        st.info("Using Gemini API from .env file")
+        st.info("Using System API (50 requests/day)")
     
+    st.divider()
+
     st.divider()
 
     st.header("Docs & Data")
@@ -200,6 +253,8 @@ with st.sidebar:
         log_event("open_dataset_viewer_clicked")
         st.session_state.show_dataset_panel = True
         st.session_state.show_readme_panel = False
+    
+
     
     st.divider()
     
@@ -216,6 +271,8 @@ with st.sidebar:
                     st.info(f"Requests left today: **{requests_left}**")
                 else:
                     st.error("Daily limit reached (50 requests/day)")
+            elif st.session_state.model_type == "custom_gemini":
+                st.info("Using custom Gemini API Key (unlimited)")
             else:
                 st.info("Using local API (unlimited)")
         
@@ -303,10 +360,198 @@ if st.session_state.get("show_dataset_panel"):
 st.title("🎬 Hoopla")
 st.caption("Unified UI for Hoopla’s hybrid search, RAG workflows, semantic retrieval, keyword tools, reranking helpers, and multimodal experiments powered by Gemini/Ollama.")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["RAG", "Hybrid Search", "Semantic Search", "Keyword Search", "Multimodal Search"])
+# Load chat history from database ONCE when user logs in (before tabs to avoid repeated loads)
+user_id = get_current_user_id()
+if user_id and 'chat_loaded' not in st.session_state:
+    try:
+        db_messages = get_recent_chat_messages(user_id, limit=20)
+        for msg in db_messages:
+            st.session_state.chat_messages.append({"role": "user", "content": msg['query']})
+            st.session_state.chat_messages.append({"role": "assistant", "content": msg['response'], "results": []})
+        st.session_state.chat_loaded = True
+    except Exception as e:
+        logger.error(f"Failed to load chat history: {e}")
+        st.session_state.chat_loaded = True  # Set anyway to prevent repeated attempts
+
+# Create tabs - include admin panel only for admin users
+if is_admin():
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Chat", "RAG", "Hybrid Search", "Semantic Search", "Keyword Search", "Multimodal Search", "🔐 Admin Panel"])
+else:
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Chat", "RAG", "Hybrid Search", "Semantic Search", "Keyword Search", "Multimodal Search"])
+    tab7 = None  # Placeholder
+
+# Chat Tab
+with tab1:
+    st.header("💬 Chat with Hoopla")
+    st.caption("Ask questions about the Hoopla codebase. Toggle Thinking Mode for more accurate results using AI re-ranking.")
+    
+    # Thinking Mode toggle below caption
+    st.session_state.thinking_mode = st.checkbox(
+        "🧠 Thinking Mode",
+        value=st.session_state.thinking_mode,
+        help="Enable re-ranking for more accurate results (slower)"
+    )
+    
+    # Clear chat button - right aligned
+    col1, col2, col3 = st.columns([6, 1, 1])
+    with col3:
+        if st.button("🗑️ Clear Chat", width="stretch"):
+            # Soft delete conversations in database
+            user_id = get_current_user_id()
+            if user_id:
+                mark_conversations_as_deleted(user_id, mode='chat')
+            # Clear session state
+            st.session_state.chat_messages = []
+            st.session_state.chat_loaded = False
+            st.success("Chat cleared!")
+            st.rerun()
+    
+    # Search Mode Toggle
+    st.caption("🔍 Search Mode")
+    search_mode_display = st.radio(
+        "Search Mode",
+        ["HyDE (Concept Search)", "Code (Exact Search)"],
+        horizontal=True,
+        label_visibility="collapsed",
+        help="HyDE matches concepts/descriptions. Code matches variable names and structure."
+    )
+    search_mode = "hyde" if "HyDE" in search_mode_display else "code"
+    
+    # Display chat messages
+    for message in st.session_state.chat_messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+            if "results" in message and message["results"]:
+                with st.expander("📄 Relevant Code Chunks"):
+                    for i, res in enumerate(message["results"], 1):
+                        st.markdown(f"**{i}. {res['filename']}:{res['name']}** (Score: {res['score']:.4f})")
+                        st.code(res['content'], language='python')
+    
+    # Chat input
+    if prompt := st.chat_input("Ask me about the codebase..."):
+        log_event("chat_message_sent", has_query=bool(prompt))
+        
+        # Check rate limit
+        allowed, rate_message = check_and_consume_rate_limit()
+        if not allowed:
+            st.error(rate_message)
+        else:
+            # Add user message to chat
+            st.session_state.chat_messages.append({"role": "user", "content": prompt})
+            
+            # Display user message
+            with st.chat_message("user"):
+                st.write(prompt)
+            
+            # Generate response
+            with st.chat_message("assistant"):
+                with st.spinner("Searching codebase..."):
+                    try:
+                        # Build context from chat history
+                        chat_context = ""
+                        if len(st.session_state.chat_messages) > 1:
+                            recent_messages = st.session_state.chat_messages[-4:-1]  # Last 3 messages (excluding current)
+                            chat_context = "Previous conversation:\n"
+                            for msg in recent_messages:
+                                role = "User" if msg["role"] == "user" else "Assistant"
+                                chat_context += f"{role}: {msg['content']}\n"
+                            chat_context += "\n"
+                        
+                        # Codebase RAG Logic
+                        rag = CodebaseRAG()
+                        
+                        # Rewrite query for better search
+                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                        search_query = rewrite_query(prompt, api_key)
+                        if search_query != prompt:
+                            with st.expander("🔍 Search Details"):
+                                st.caption(f"Rewritten Query: {search_query}")
+                        
+                        results = rag.search(
+                            search_query,
+                            limit=10,
+                            score_threshold=0.01,  # RRF score threshold
+                            use_reranking=st.session_state.thinking_mode,
+                            mode=search_mode
+                        )
+                        
+                        # Format results for prompt
+                        context_str = ""
+                        for res in results:
+                            # Safely get score, defaulting to 0.0 if missing
+                            score = res.get('score', 0.0)
+                            context_str += f"File: {res['filename']}\nFunction: {res['name']}\nScore: {score:.4f}\nCode:\n{res['content']}\n\n"
+                        
+                        enhanced_prompt = f"""{chat_context}
+Original Question: {prompt}
+Rewritten Query (for technical retrieval): {search_query}
+
+You are an expert coding assistant for the Hoopla codebase. 
+I have retrieved relevant code chunks based on the rewritten query above, which expands the original question into technical terms.
+
+Use the following code chunks to answer the user's ORIGINAL QUESTION.
+- The "Score" indicates relevance (higher is better).
+- Cite the file and function name when explaining code.
+- If the code chunks don't contain the answer, say so, but try to be helpful based on the function names and descriptions.
+
+Code Chunks:
+{context_str}
+
+Your response:"""
+                        
+                        # Generate response
+                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                        if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
+                            from app.model_handler import generate_with_ollama
+                            response = generate_with_ollama(enhanced_prompt, st.session_state.selected_ollama_model)
+                        else:
+                            from app.model_handler import generate_with_gemini
+                            response = generate_with_gemini(enhanced_prompt, api_key=api_key)
+                        
+                        st.write(response)
+                        
+                        # Show code suggestions
+                        if results:
+                            with st.expander("📄 Relevant Code Chunks"):
+                                for i, res in enumerate(results, 1):
+                                    st.markdown(f"**{i}. {res['filename']}:{res['name']}** (Score: {res['score']:.4f})")
+                                    st.code(res['content'], language='python')
+
+                        # Add assistant message to chat
+                        st.session_state.chat_messages.append({
+                            "role": "assistant",
+                            "content": response,
+                            "results": results # Store chunks as results
+                        })
+                        
+                        # Save to database
+                        user_id = get_current_user_id()
+                        if user_id:
+                            model_type_str = st.session_state.model_type
+                            if model_type_str == "local" and st.session_state.selected_ollama_model:
+                                model_type_str = f"local:{st.session_state.selected_ollama_model}"
+                            elif model_type_str == "custom_gemini":
+                                model_type_str = "gemini:custom"
+                            
+                            add_conversation(
+                                user_id=user_id,
+                                mode="chat",
+                                query=prompt,
+                                response=response,
+                                model_type=model_type_str
+                            )
+                        
+                        log_event("chat_message_completed", result_count=len(results))
+                            
+                    except InvalidAPIKeyError as e:
+                        logger.error(f"Invalid API Key in chat: {str(e)}")
+                        st.error("⚠️ **Invalid API Key**: Please check your Gemini API key in the sidebar configuration.")
+                    except Exception as e:
+                        logger.exception("Chat generation failed")
+                        st.error(f"Error generating response: {str(e)}")
 
 # RAG Tab
-with tab1:
+with tab2:
     st.header("Retrieval Augmented Generation")
     
     rag_type = st.selectbox("Select RAG Type", ["rag", "summarize", "citations", "question"])
@@ -331,25 +576,49 @@ with tab1:
                         
                         st.subheader("Generated Response")
                         
+                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                        
                         if rag_type == "rag":
-                            response = generate_response(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
+                            response = generate_response(query, results, st.session_state.model_type, st.session_state.selected_ollama_model, api_key=api_key)
                         elif rag_type == "summarize":
-                            response = generate_multidoc_summary(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
+                            response = generate_multidoc_summary(query, results, st.session_state.model_type, st.session_state.selected_ollama_model, api_key=api_key)
                         elif rag_type == "citations":
-                            response = generate_citations(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
+                            response = generate_citations(query, results, st.session_state.model_type, st.session_state.selected_ollama_model, api_key=api_key)
                         elif rag_type == "question":
-                            response = generate_answer(query, results, st.session_state.model_type, st.session_state.selected_ollama_model)
+                            response = generate_answer(query, results, st.session_state.model_type, st.session_state.selected_ollama_model, api_key=api_key)
                         
                         st.write(response)
                         
-                        # Save chat history
-                        save_chat_history(
-                            query_type=f"rag_{rag_type}",
-                            query_text=query,
-                            response_text=response,
-                            response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", "")} for r in results])
-                        )
+                        # Save to database
+                        user_id = get_current_user_id()
+                        if user_id:
+                            model_type_str = st.session_state.model_type
+                            if model_type_str == "local" and st.session_state.selected_ollama_model:
+                                model_type_str = f"local:{st.session_state.selected_ollama_model}"
+                            elif model_type_str == "custom_gemini":
+                                model_type_str = "gemini:custom"
+                            
+                            # Determine mode based on RAG type
+                            mode_map = {
+                                "rag": "rag",
+                                "summarize": "rag_summarize",
+                                "citations": "rag_citations",
+                                "question": "rag_question"
+                            }
+                            
+                            add_conversation(
+                                user_id=user_id,
+                                mode=mode_map.get(rag_type, "rag"),
+                                query=query,
+                                response=response,
+                                model_type=model_type_str
+                            )
+                        
                         log_event("rag_generate_completed", rag_type=rag_type, result_count=len(results))
+                        log_event("rag_generate_completed", rag_type=rag_type, result_count=len(results))
+                    except InvalidAPIKeyError as e:
+                        logger.error(f"Invalid API Key: {str(e)}")
+                        st.error("⚠️ **Invalid API Key**: The provided Gemini API key is invalid or has expired. Please check your key in the sidebar configuration.")
                     except Exception as e:
                         logger.exception("RAG generation failed")
                         st.error(f"Error: {str(e)}")
@@ -358,7 +627,7 @@ with tab1:
             log_event("rag_generate_missing_query", level="warning", rag_type=rag_type)
 
 # Hybrid Search Tab
-with tab2:
+with tab3:
     st.header("Hybrid Search")
     
     search_type = st.selectbox("Select Search Type", ["rrf-search", "weighted-search"])
@@ -414,7 +683,8 @@ with tab2:
                                             st.error("Rate limit reached. Cannot complete reranking.")
                                             break
                                     
-                                    from app.model_handler import generate_with_gemini, generate_with_ollama
+                                    from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
+                                    api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
                                     prompt = f"""Rate how well this movie matches the search query.
 
                                     Query: "{query}"
@@ -433,7 +703,12 @@ with tab2:
                                     if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
                                         response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                     else:
-                                        response_text = generate_with_gemini(prompt)
+                                        try:
+                                            response_text = generate_with_gemini(prompt, api_key=api_key)
+                                        except InvalidAPIKeyError as e:
+                                            logger.error(f"Invalid API Key during reranking: {str(e)}")
+                                            st.error("⚠️ **Invalid API Key**: Cannot rerank results. Please check your Gemini API key.")
+                                            response_text = "0"
                                     doc['score'] = int((response_text or "").strip().strip('"'))
                                 results = sorted(results, key=lambda x: x['score'], reverse=True)[:limit]
                             elif rerank == "batch":
@@ -442,7 +717,8 @@ with tab2:
                                     if not check_rate_limit_for_api_call():
                                         st.error("Rate limit reached. Cannot complete reranking.")
                                     else:
-                                        from app.model_handler import generate_with_gemini, generate_with_ollama
+                                        from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
+                                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
                                         prompt = f"""Rank these movies by relevance to the search query.
 
                                         Query: "{query}"
@@ -458,9 +734,15 @@ with tab2:
                                         if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
                                             json_response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                         else:
-                                            json_response_text = generate_with_gemini(prompt)
+                                            try:
+                                                json_response_text = generate_with_gemini(prompt, api_key=api_key)
+                                            except InvalidAPIKeyError as e:
+                                                logger.error(f"Invalid API Key during batch reranking: {str(e)}")
+                                                st.error("⚠️ **Invalid API Key**: Cannot rerank results. Please check your Gemini API key.")
+                                                json_response_text = "[]"
                                 else:
-                                    from app.model_handler import generate_with_gemini, generate_with_ollama
+                                    from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
+                                    api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
                                     prompt = f"""Rank these movies by relevance to the search query.
 
                                     Query: "{query}"
@@ -476,7 +758,12 @@ with tab2:
                                     if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
                                         json_response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                     else:
-                                        json_response_text = generate_with_gemini(prompt)
+                                        try:
+                                            json_response_text = generate_with_gemini(prompt, api_key=api_key)
+                                        except InvalidAPIKeyError as e:
+                                            logger.error(f"Invalid API Key during batch reranking: {str(e)}")
+                                            st.error("⚠️ **Invalid API Key**: Cannot rerank results. Please check your Gemini API key.")
+                                            json_response_text = "[]"
                                 
                                 batch_results = json.loads(json_response_text)
                                 docs = []
@@ -527,8 +814,9 @@ with tab2:
                                     st.error("Rate limit reached. Cannot complete evaluation.")
                                 else:
                                     from cli.lib.reranking import format_results
-                                    from app.model_handler import generate_with_gemini, generate_with_ollama
+                                    from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
                                     import json
+                                    api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
                                     
                                     with st.expander("Evaluation Results"):
                                         formatted_results = format_results(results)
@@ -566,11 +854,17 @@ with tab2:
                                         if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
                                             response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                         else:
-                                            response_text = generate_with_gemini(prompt)
+                                            try:
+                                                response_text = generate_with_gemini(prompt, api_key=api_key)
+                                            except InvalidAPIKeyError as e:
+                                                logger.error(f"Invalid API Key during evaluation: {str(e)}")
+                                                st.error("⚠️ **Invalid API Key**: Cannot evaluate results. Please check your Gemini API key.")
+                                                response_text = None
                             else:
                                 from cli.lib.reranking import format_results
-                                from app.model_handler import generate_with_gemini, generate_with_ollama
+                                from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
                                 import json
+                                api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
                                 
                                 with st.expander("Evaluation Results"):
                                     formatted_results = format_results(results)
@@ -608,7 +902,12 @@ with tab2:
                                     if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
                                         response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                     else:
-                                        response_text = generate_with_gemini(prompt)
+                                        try:
+                                            response_text = generate_with_gemini(prompt, api_key=api_key)
+                                        except InvalidAPIKeyError as e:
+                                            logger.error(f"Invalid API Key during evaluation: {str(e)}")
+                                            st.error("⚠️ **Invalid API Key**: Cannot evaluate results. Please check your Gemini API key.")
+                                            response_text = None
                                 
                                 if not response_text:
                                     st.error("Failed to get evaluation response from the model. Please try again.")
@@ -646,6 +945,9 @@ with tab2:
                         response_results=json.dumps([{"title": r.get("title", ""), "id": r.get("id", ""), "score": r.get("rrf_score", r.get("hybrid_score", 0))} for r in results])
                     )
                     log_event("hybrid_search_completed", search_type=search_type, result_count=len(results))
+                except InvalidAPIKeyError as e:
+                    logger.error(f"Invalid API Key: {str(e)}")
+                    st.error("⚠️ **Invalid API Key**: The provided Gemini API key is invalid or has expired. Please check your key in the sidebar configuration.")
                 except Exception as e:
                     logger.exception("Hybrid search failed")
                     st.error(f"Error: {str(e)}")
@@ -654,7 +956,7 @@ with tab2:
             log_event("hybrid_search_missing_query", level="warning", search_type=search_type)
 
 # Semantic Search Tab
-with tab3:
+with tab4:
     st.header("Semantic Search")
     
     query = st.text_input("Enter your query", key="semantic_query", placeholder="funny bear movies")
@@ -693,7 +995,7 @@ with tab3:
             log_event("semantic_search_missing_query", level="warning")
 
 # Keyword Search Tab
-with tab4:
+with tab5:
     st.header("Keyword Search (BM25)")
     
     query = st.text_input("Enter your query", key="keyword_query", placeholder="animated family")
@@ -732,7 +1034,7 @@ with tab4:
             log_event("keyword_search_missing_query", level="warning")
 
 # Multimodal Search Tab
-with tab5:
+with tab6:
     st.header("Multimodal Image Search")
     
     uploaded_file = st.file_uploader("Upload an image to search by image", type=['png', 'jpg', 'jpeg'])
@@ -780,3 +1082,75 @@ with tab5:
                     if os.path.exists(tmp_path):
                         os.unlink(tmp_path)
 
+# Admin Panel Tab
+if tab7 is not None and is_admin():
+    with tab7:
+        st.header("🔐 Admin Panel")
+        st.caption("Administrator dashboard for viewing users, conversations, and database statistics")
+        
+        # Database Statistics
+        st.subheader("📊 Database Statistics")
+        stats = get_db_stats()
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Users", stats.get('total_users', 0))
+        with col2:
+            st.metric("Total Conversations", stats.get('total_conversations', 0))
+        with col3:
+            st.metric("Deleted Conversations", stats.get('deleted_conversations', 0))
+        
+        # Conversations by mode
+        if stats.get('conversations_by_mode'):
+            st.write("**Conversations by Mode:**")
+            mode_data = stats['conversations_by_mode']
+            mode_cols = st.columns(len(mode_data))
+            for idx, (mode, count) in enumerate(mode_data.items()):
+                with mode_cols[idx]:
+                    st.metric(mode.capitalize(), count)
+        
+        st.divider()
+        
+        # View All Users
+        st.subheader("👥 All Users")
+        users = get_all_users()
+        
+        if users:
+            # Create DataFrame for better display
+            import pandas as pd
+            users_df = pd.DataFrame(users)
+            users_df = users_df[['id', 'username', 'requests_left', 'is_admin', 'created_at']]
+            st.dataframe(users_df, width="stretch", hide_index=True)
+        else:
+            st.info("No users found")
+        
+        st.divider()
+        
+        # View User Conversations
+        st.subheader("💬 View User Conversations")
+        
+        if users:
+            # User selector
+            user_options = {f"{u['username']} (ID: {u['id']})": u['id'] for u in users}
+            selected_user = st.selectbox("Select a user to view their conversations", options=list(user_options.keys()))
+            
+            include_deleted = st.checkbox("Include deleted conversations", value=False)
+            
+            if st.button("Load Conversations"):
+                user_id = user_options[selected_user]
+                conversations = get_user_conversations(user_id, include_deleted=include_deleted)
+                
+                if conversations:
+                    st.write(f"**Found {len(conversations)} conversation(s)**")
+                    
+                    for conv in conversations:
+                        status = "🗑️ DELETED" if conv.get('deleted', 0) == 1 else "✅ Active"
+                        with st.expander(f"{status} | {conv['mode'].upper()} | {conv['timestamp']}"):
+                            st.write(f"**Query:** {conv['query']}")
+                            st.write(f"**Response:** {conv['response'][:500]}..." if len(conv['response']) > 500 else f"**Response:** {conv['response']}")
+                            st.write(f"**Model:** {conv.get('model_type', 'N/A')}")
+                            st.write(f"**ID:** {conv['id']}")
+                else:
+                    st.info("No conversations found for this user")
+        else:
+            st.warning("No users available")

@@ -133,6 +133,16 @@ class InvertedIndex:
         self.avg_doc_length = self.__get_avg_doc_length()
         self.avg_doc_length = self.__get_avg_doc_length()
         
+    def build_from_documents(self, documents: list[dict]) -> None:
+        """Build index from a list of documents instead of loading movies."""
+        for doc in documents:
+            doc_id = doc['id']
+            self.docmap[doc_id] = doc
+            # Combine title and description for indexing
+            text = f"{doc.get('title', '')} {doc.get('description', '')}"
+            self.__add_documents(doc_id, text)
+        self.avg_doc_length = self.__get_avg_doc_length()
+        
     def save(self) -> None:
         os.makedirs(CACHE_DIR, exist_ok=True)
         with open(self.index_path, "wb") as file:

@@ -18,7 +18,11 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, password_hash: str) -> bool:
     """Verify a password against a hash."""
-    return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    except (ValueError, AttributeError) as e:
+        # Invalid hash format (e.g., SHA256 instead of bcrypt)
+        return False
 
 
 def register_user(username: str, password: str) -> Tuple[bool, str]:
@@ -66,9 +70,14 @@ def check_rate_limit(user_id: int, is_system_api: bool) -> Tuple[bool, int]:
     """
     Check if user can make a request.
     Returns (allowed, requests_left)
-    - SYSTEM API (Gemini): 50 requests/day limit
+    - SYSTEM API (Gemini): 50 requests/day limit (unlimited for admin)
     - User API (Ollama): No limit
     """
+    # Check if user is admin - unlimited access
+    user = get_user_by_id(user_id)
+    if user and user.get('is_admin', 0) == 1:
+        return True, 999999  # Unlimited for admin
+    
     if not is_system_api:
         # User API has no limit
         return True, -1  # -1 indicates unlimited
@@ -118,3 +127,15 @@ def logout_user():
     if 'username' in st.session_state:
         del st.session_state.username
 
+
+def is_admin() -> bool:
+    """Check if the current user is an admin."""
+    user_id = get_current_user_id()
+    if not user_id:
+        return False
+    
+    user = get_user_by_id(user_id)
+    if not user:
+        return False
+    
+    return user.get('is_admin', 0) == 1
