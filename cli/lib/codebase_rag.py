@@ -23,6 +23,23 @@ def rrf_score(rank, k: int = DEFAULT_K_VALUE):
     """Calculate RRF score for a given rank."""
     return 1 / (k + rank)
 
+def _load_readme_context() -> str:
+    """Helper to load README content for context."""
+    readme_content = ""
+    try:
+        root_readme = os.path.join(PROJECT_ROOT, "README.md")
+        if os.path.exists(root_readme):
+            with open(root_readme, "r") as f:
+                readme_content += f"\n--- Root README ---\n{f.read()}"
+        
+        cli_readme = os.path.join(PROJECT_ROOT, "cli", "README.md")
+        if os.path.exists(cli_readme):
+            with open(cli_readme, "r") as f:
+                readme_content += f"\n--- CLI README ---\n{f.read()}"
+    except Exception:
+        pass
+    return readme_content
+
 def rewrite_query(query: str, api_key: str = None) -> str:
     """
     Rewrites a user query to be more suitable for searching function descriptions.
@@ -36,30 +53,18 @@ def rewrite_query(query: str, api_key: str = None) -> str:
         
     try:
         client = genai.Client(api_key=api_key)
-        prompt = f"""You are a search query expert. Your task is to rewrite user questions into comprehensive search queries that will match against technical function descriptions.
+        
+        # Load README content
+        readme_content = _load_readme_context()
 
-The search system uses function descriptions (not code or function names), so focus on:
-- Key concepts and technical terms related to the question
-- Related operations, processes, or workflows
-- Alternative phrasings and synonyms
-- Domain-specific terminology
-
-Examples:
-
-User: "How do I log in?"
-Rewritten: "user authentication login session management credential verification password check login process user authorization"
-
-User: "Where is the database connection handled?"
-Rewritten: "database connection management session creation database initialization connection pooling database setup establish connection"
-
-User: "Show me the code for searching movies"
-Rewritten: "movie search functionality search implementation query processing search results retrieval movie lookup find movies"
-
-User: "How are images processed?"
-Rewritten: "image processing image manipulation encoding decoding image transformation image handling base64 conversion"
-
-User: "{query}"
-Rewritten:"""
+        prompt = f"""You are a helpful assistant for Hoopla. Your task is to rewrite the user query into a decent-sized, technical search query suitable for RAG (Retrieval Augmented Generation) against the codebase.
+        
+        Use the following context from the project READMEs to understand the terminology:
+        {readme_content}
+        
+        User Query: "{query}"
+        
+        Rewritten Query (just the query text, no quotes or explanations):"""
         
         response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
         rewritten = response.text.strip().replace('"', '')
@@ -260,13 +265,58 @@ Description:"""
 class CodebaseRAG:
     def __init__(self, root_dir: str = PROJECT_ROOT, api_key: str = None):
         self.root_dir = root_dir
-        self.api_key = api_key
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
         self.chunks = []
-        self.embeddings = None  # Description embeddings (HyDE)
-        self.code_embeddings = None  # Code content embeddings
+        self.chunks = []
+        self.embeddings = None  # Description embeddings (Concept Search)
+        self.code_embeddings = None  # Code content embeddings (SimpleRAG / HyDE)
         self.keyword_index = None
+
+    def generate_hypothetical_code(self, query: str) -> str:
+        """
+        Generates a hypothetical code snippet based on the user query (Actual HyDE).
+        """
+        if not self.api_key:
+            return query
+            
+        try:
+            client = genai.Client(api_key=self.api_key)
+            
+            # Load README context to help the LLM understand the codebase
+            readme_context = _load_readme_context()
+            
+            prompt = f"""You are an expert Python developer. Write a hypothetical Python function or code snippet that would answer the following user query.
+            
+            Context from Project READMEs:
+            {readme_context}
+            
+            User Query: "{query}"
+            
+            Do not include any explanations or markdown formatting. Just provide the raw Python code that might exist in a codebase to solve this problem.
+
+            Example:
+            Query: "tell me about hybrid search"
+            Response:
+            def hybrid_search(self, query: str, limit: int = 10):
+                # Perform keyword search
+                bm25_results = self.keyword_index.search(query, limit=limit)
+                
+                # Perform semantic search
+                semantic_results = self.vector_store.search(query, limit=limit)
+                
+                # Combine results using RRF
+                combined_results = self.rrf_fusion(bm25_results, semantic_results)
+                return combined_results
+            
+            Generated Hypothetical Code:"""
+            
+            response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+            return response.text.strip()
+        except Exception as e:
+            print(f"Error generating hypothetical code: {e}")
+            return query
 
     def build_index(self):
         chunker = CodebaseChunker(self.root_dir, api_key=self.api_key)
@@ -368,22 +418,40 @@ class CodebaseRAG:
             with open(CODEBASE_KEYWORD_INDEX_PATH, "wb") as f:
                 pickle.dump(self.keyword_index, f)
 
-    def search(self, query: str, limit: int = 10, score_threshold: float = 0.01, use_reranking: bool = False, mode: str = "hyde") -> List[Dict[str, Any]]:
+    def search(self, query: str, limit: int = 10, score_threshold: float = 0.01, use_reranking: bool = False, mode: str = "concept") -> List[Dict[str, Any]]:
         """
         Hybrid search using RRF fusion of semantic and keyword search.
-        mode: "hyde" (default, uses description embeddings) or "code" (uses code content embeddings)
+        mode: 
+            - "concept": uses description embeddings
+            - "simple": uses code content embeddings
+            - "hyde": generates hypothetical code -> embeds -> searches code embeddings
         """
         if self.embeddings is None or self.keyword_index is None:
             self.load_index()
         
         # Semantic search
-        query_embedding = self.model.encode(query)
+        search_text = query
+        target_embeddings = self.embeddings # Default to concept search
         
-        # Select embeddings based on mode
-        if mode == "code" and self.code_embeddings is not None:
-            target_embeddings = self.code_embeddings
-        else:
-            target_embeddings = self.embeddings
+        if mode == "hyde":
+            # Actual HyDE: Generate hypothetical code, then search against CODE embeddings
+            print("Generating hypothetical code for HyDE...")
+            search_text = self.generate_hypothetical_code(query)
+            print(f"Hypothetical Code:\n{search_text[:200]}...")
+            if self.code_embeddings is not None:
+                target_embeddings = self.code_embeddings
+            else:
+                print("Warning: Code embeddings missing for HyDE. Falling back to descriptions.")
+                
+        elif mode == "simple":
+            # SimpleRAG: Search query directly against CODE embeddings
+            if self.code_embeddings is not None:
+                target_embeddings = self.code_embeddings
+            else:
+                print("Warning: Code embeddings missing for SimpleRAG. Falling back to descriptions.")
+        
+        # Calculate cosine similarity
+        query_embedding = self.model.encode(search_text)
             
         semantic_scores = np.dot(target_embeddings, query_embedding) / (
             np.linalg.norm(target_embeddings, axis=1) * np.linalg.norm(query_embedding)
@@ -407,7 +475,7 @@ class CodebaseRAG:
             rrf_scores[idx] += rrf_score(rank, k)
         
         # Get candidates based on RRF score threshold
-        candidate_count = limit * 3 if use_reranking else limit
+        candidate_count = limit * 10 if use_reranking else limit
         top_indices = heapq.nlargest(candidate_count, rrf_scores, key=rrf_scores.get)
         
         # Filter by score threshold

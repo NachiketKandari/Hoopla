@@ -1,6 +1,16 @@
 [
   {
     "type": "function",
+    "name": "main",
+    "filepath": "update_index.py",
+    "filename": "update_index.py",
+    "content": "def main():\n    print(\"\ud83d\udd04 Updating Codebase Index...\")\n    try:\n        rag = CodebaseRAG()\n        rag.build_index()\n        print(\"\u2705 Index updated successfully!\")\n    except Exception as e:\n        print(f\"\u274c Failed to update index: {e}\")\n        sys.exit(1)",
+    "start_line": 10,
+    "end_line": 18,
+    "description": "The `main` function manages the process of updating a codebase index. It creates a `CodebaseRAG` object, then attempts to build the index using the `build_index` method.  A loading message is printed initially. If successful, a success message is displayed. In case of any exception during the indexing process, an error message is printed, including the specific error details, and the program exits with a non-zero exit code, signaling failure."
+  },
+  {
+    "type": "function",
     "name": "copy_py_files_to_txt",
     "filepath": "copy_code.py",
     "filename": "copy_code.py",
@@ -44,9 +54,9 @@
     "name": "register_user",
     "filepath": "app/auth.py",
     "filename": "auth.py",
-    "content": "def register_user(username: str, password: str) -> Tuple[bool, str]:\n    \"\"\"\n    Register a new user.\n    Returns (success, message)\n    \"\"\"\n    if not username or not password:\n        return False, \"Username and password are required\"\n    \n    if len(username) < 3:\n        return False, \"Username must be at least 3 characters\"\n    \n    if len(password) < 6:\n        return False, \"Password must be at least 6 characters\"\n    \n    password_hash = hash_password(password)\n    success = create_user(username, password_hash)\n    \n    if success:\n        return True, \"Registration successful! Please login.\"\n    else:\n        return False, \"Username already exists\"",
+    "content": "def register_user(username: str, password: str) -> Tuple[bool, str, Optional[int]]:\n    \"\"\"\n    Register a new user.\n    Returns (success, message, user_id)\n    \"\"\"\n    if not username or not password:\n        return False, \"Username and password are required\", None\n    \n    if len(username) < 3:\n        return False, \"Username must be at least 3 characters\", None\n    \n    if len(password) < 6:\n        return False, \"Password must be at least 6 characters\", None\n    \n    password_hash = hash_password(password)\n    success = create_user(username, password_hash)\n    \n    if success:\n        user = get_user_by_username(username)\n        return True, \"Registration successful! Logging you in...\", user['id']\n    else:\n        return False, \"Username already exists\", None",
     "start_line": 28,
-    "end_line": 48,
+    "end_line": 49,
     "description": "The `register_user` function handles user registration. It takes a `username` (string) and `password` (string) as input. It first validates the inputs, ensuring they meet length requirements. It then hashes the password using `hash_password` and attempts to create the user in a database using `create_user`. The function returns a tuple: `(success, message)`. Success is a boolean indicating registration success, and message provides feedback, such as error details (e.g., username already exists) or confirmation."
   },
   {
@@ -55,8 +65,8 @@
     "filepath": "app/auth.py",
     "filename": "auth.py",
     "content": "def authenticate_user(username: str, password: str) -> Tuple[Optional[int], str]:\n    \"\"\"\n    Authenticate a user.\n    Returns (user_id, message). user_id is None if authentication failed.\n    \"\"\"\n    if not username or not password:\n        return None, \"Username and password are required\"\n    \n    user = get_user_by_username(username)\n    if not user:\n        return None, \"Invalid username or password\"\n    \n    if not verify_password(password, user['password_hash']):\n        return None, \"Invalid username or password\"\n    \n    return user['id'], \"Login successful\"",
-    "start_line": 51,
-    "end_line": 66,
+    "start_line": 52,
+    "end_line": 67,
     "description": "The `authenticate_user` function verifies user credentials. It takes a `username` and `password` as input.  It first checks for empty input.  Then, it retrieves user data using `get_user_by_username`. If the user exists and the provided password, when verified against the stored hash via `verify_password`, matches the stored hash, the function returns a tuple containing the user's `id` and a success message. Otherwise, it returns `None` and an error message."
   },
   {
@@ -65,8 +75,8 @@
     "filepath": "app/auth.py",
     "filename": "auth.py",
     "content": "def check_rate_limit(user_id: int, is_system_api: bool) -> Tuple[bool, int]:\n    \"\"\"\n    Check if user can make a request.\n    Returns (allowed, requests_left)\n    - SYSTEM API (Gemini): 50 requests/day limit (unlimited for admin)\n    - User API (Ollama): No limit\n    \"\"\"\n    # Check if user is admin - unlimited access\n    user = get_user_by_id(user_id)\n    if user and user.get('is_admin', 0) == 1:\n        return True, 999999  # Unlimited for admin\n    \n    if not is_system_api:\n        # User API has no limit\n        return True, -1  # -1 indicates unlimited\n    \n    requests_left = get_user_requests_left(user_id)\n    \n    if requests_left > 0:\n        return True, requests_left\n    else:\n        return False, 0",
-    "start_line": 69,
-    "end_line": 90,
+    "start_line": 70,
+    "end_line": 91,
     "description": "The `check_rate_limit` function determines if a user can make an API request, considering rate limits. It takes a `user_id` and a boolean `is_system_api` as input. For system APIs (e.g., Gemini), it enforces a 50 requests/day limit unless the user is an admin.  User API requests (e.g., Ollama) have no limit.  The function uses `get_user_by_id` to check admin status and `get_user_requests_left` to check remaining requests. It returns a tuple: `(allowed: bool, requests_left: int)`, where `requests_left` indicates remaining requests or -1 for unlimited access."
   },
   {
@@ -75,8 +85,8 @@
     "filepath": "app/auth.py",
     "filename": "auth.py",
     "content": "def consume_rate_limit(user_id: int, is_system_api: bool) -> bool:\n    \"\"\"\n    Consume a rate limit for a user.\n    Returns True if successful, False if limit reached.\n    \"\"\"\n    if not is_system_api:\n        # User API has no limit\n        return True\n    \n    return decrement_user_requests(user_id)",
-    "start_line": 93,
-    "end_line": 102,
+    "start_line": 94,
+    "end_line": 103,
     "description": "The `consume_rate_limit` function manages rate limiting for user requests. It checks if the request originates from a system API, bypassing rate limits if so. For regular user APIs (is_system_api=False), the function immediately returns True, granting access. For system APIs, it calls `decrement_user_requests` with the `user_id`, which presumably attempts to decrement the user's remaining request count. It returns True if the decrement was successful (limit not reached), and False otherwise."
   },
   {
@@ -85,8 +95,8 @@
     "filepath": "app/auth.py",
     "filename": "auth.py",
     "content": "def get_current_user_id() -> Optional[int]:\n    \"\"\"Get the current logged-in user ID from session state.\"\"\"\n    return st.session_state.get('user_id')",
-    "start_line": 105,
-    "end_line": 107,
+    "start_line": 106,
+    "end_line": 108,
     "description": "The `get_current_user_id` function retrieves the ID of the currently logged-in user. It accesses the `st.session_state` object, which stores application-specific data within a Streamlit session. The function uses the `.get()` method to safely retrieve the value associated with the key 'user_id'. This key is expected to hold an integer representing the user's ID. It returns this user ID as an optional integer, or `None` if the 'user_id' key is not present in the session state."
   },
   {
@@ -95,8 +105,8 @@
     "filepath": "app/auth.py",
     "filename": "auth.py",
     "content": "def is_user_logged_in() -> bool:\n    \"\"\"Check if a user is logged in.\"\"\"\n    return get_current_user_id() is not None",
-    "start_line": 110,
-    "end_line": 112,
+    "start_line": 111,
+    "end_line": 113,
     "description": "The `is_user_logged_in` function determines if a user is currently authenticated. It leverages an internal function, `get_current_user_id()`, which likely retrieves the ID of the logged-in user. The function returns a boolean value: `True` if `get_current_user_id()` returns a non-`None` value (indicating a user ID is present), implying a user is logged in, and `False` otherwise. Essentially, it checks for the existence of a valid user session."
   },
   {
@@ -105,8 +115,8 @@
     "filepath": "app/auth.py",
     "filename": "auth.py",
     "content": "def login_user(user_id: int):\n    \"\"\"Set user as logged in.\"\"\"\n    st.session_state.user_id = user_id\n    user = get_user_by_id(user_id)\n    if user:\n        st.session_state.username = user['username']",
-    "start_line": 115,
-    "end_line": 120,
+    "start_line": 116,
+    "end_line": 121,
     "description": "The `login_user` function simulates a user login within a Streamlit application. It takes an integer `user_id` as input, assigning it to the current session's `user_id`. It then retrieves the user's data using `get_user_by_id`. If the user exists, it sets the `username` from the retrieved user data within the session state. This function effectively tracks and stores the logged-in user's identifier and username across subsequent interactions within the Streamlit application."
   },
   {
@@ -114,9 +124,9 @@
     "name": "logout_user",
     "filepath": "app/auth.py",
     "filename": "auth.py",
-    "content": "def logout_user():\n    \"\"\"Logout the current user.\"\"\"\n    if 'user_id' in st.session_state:\n        del st.session_state.user_id\n    if 'username' in st.session_state:\n        del st.session_state.username",
-    "start_line": 123,
-    "end_line": 128,
+    "content": "def logout_user():\n    \"\"\"Logout the current user and clear session state.\"\"\"\n    keys_to_clear = ['user_id', 'username', 'chat_messages', 'chat_loaded', 'thinking_mode']\n    for key in keys_to_clear:\n        if key in st.session_state:\n            del st.session_state[key]",
+    "start_line": 124,
+    "end_line": 129,
     "description": "The `logout_user` function clears a user's session data within a Streamlit application. It removes the `user_id` and `username` key-value pairs from the `st.session_state` dictionary if they exist. This action effectively logs the user out by invalidating their session and removing associated authentication information. The function doesn't take any parameters and implicitly updates the application's session state."
   },
   {
@@ -145,8 +155,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def reset_daily_requests():\n    \"\"\"Reset daily requests for all users if it's a new day.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    today = date.today()\n    cursor.execute(\"\"\"\n        UPDATE users \n        SET requests_left = 50, last_reset_date = ?\n        WHERE last_reset_date < ?\n    \"\"\", (today, today))\n    \n    conn.commit()\n    conn.close()",
-    "start_line": 155,
-    "end_line": 168,
+    "start_line": 167,
+    "end_line": 180,
     "description": "The `reset_daily_requests` function resets the daily request allowance for all users. It checks if the current day is different from the last reset date stored in the user database. If it's a new day, it updates the `requests_left` to 50 for all users whose `last_reset_date` is earlier than the current date.  The function uses a database connection to perform an update query on the `users` table and commits the changes before closing the connection."
   },
   {
@@ -155,8 +165,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def create_user(username: str, password_hash: str) -> bool:\n    \"\"\"Create a new user. Returns True if successful, False if username exists.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    try:\n        cursor.execute(\"\"\"\n            INSERT INTO users (username, password_hash, requests_left, last_reset_date)\n            VALUES (?, ?, 50, ?)\n        \"\"\", (username, password_hash, date.today()))\n        conn.commit()\n        return True\n    except sqlite3.IntegrityError:\n        return False\n    finally:\n        conn.close()",
-    "start_line": 171,
-    "end_line": 186,
+    "start_line": 183,
+    "end_line": 198,
     "description": "The `create_user` function adds a new user to a database. It takes a `username` (string) and a pre-computed `password_hash` (string) as input.  It attempts to insert these values, along with default values for `requests_left` and `last_reset_date`, into a 'users' table. It uses an `INSERT` SQL query and utilizes parameterized queries for security.  It returns `True` if the insertion is successful and `False` if a `sqlite3.IntegrityError` occurs, indicating the username already exists. The database connection is properly closed in a `finally` block to ensure resource cleanup."
   },
   {
@@ -165,8 +175,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:\n    \"\"\"Get user by username. Returns None if not found.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"SELECT * FROM users WHERE username = ?\", (username,))\n    row = cursor.fetchone()\n    conn.close()\n    \n    if row:\n        return dict(row)\n    return None",
-    "start_line": 189,
-    "end_line": 200,
+    "start_line": 201,
+    "end_line": 212,
     "description": "The `get_user_by_username` function retrieves a user's information from a database based on their username. It takes a `username` string as input. It establishes a database connection, executes a SQL query to select the user's data from the `users` table where the username matches the input. If a matching user is found, the function returns a dictionary representation of the user's data; otherwise, it returns `None`.  The database connection is closed after the query."
   },
   {
@@ -175,8 +185,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:\n    \"\"\"Get user by ID. Returns None if not found.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"SELECT * FROM users WHERE id = ?\", (user_id,))\n    row = cursor.fetchone()\n    conn.close()\n    \n    if row:\n        return dict(row)\n    return None",
-    "start_line": 203,
-    "end_line": 214,
+    "start_line": 215,
+    "end_line": 226,
     "description": "The `get_user_by_id` function retrieves a user's information from a database based on their unique ID. It takes an integer `user_id` as input.  It connects to a database, executes a SQL query to select the user with the matching ID, and fetches the result. If a user is found (i.e., a row is returned), the function transforms the row into a dictionary and returns it; otherwise, it returns `None`.  This function utilizes database interaction and row processing to provide user data lookup functionality."
   },
   {
@@ -185,8 +195,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def decrement_user_requests(user_id: int) -> bool:\n    \"\"\"Decrement user's request count. Returns True if successful, False if limit reached.\"\"\"\n    # Don't reset here - it's called by get_user_requests_left which is always called before this\n    # reset_daily_requests()  # Removed to avoid redundant DB operations\n    \n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"\"\"\n        UPDATE users \n        SET requests_left = requests_left - 1\n        WHERE id = ? AND requests_left > 0\n    \"\"\", (user_id,))\n    \n    success = cursor.rowcount > 0\n    conn.commit()\n    conn.close()\n    \n    return success",
-    "start_line": 217,
-    "end_line": 235,
+    "start_line": 229,
+    "end_line": 247,
     "description": "This Python function, `decrement_user_requests`, reduces a user's remaining request count in a database. It takes a `user_id` (integer) as input.  It attempts to decrement `requests_left` for the specified user within the database, only if the current `requests_left` is greater than zero.  It uses a SQL `UPDATE` statement.  The function returns `True` if the decrement was successful (a row was updated), and `False` otherwise (request limit reached or user not found). Database connections are handled within the function."
   },
   {
@@ -195,9 +205,19 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def get_user_requests_left(user_id: int) -> int:\n    \"\"\"Get remaining requests for a user.\"\"\"\n    reset_daily_requests()  # Reset if needed\n    \n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"SELECT requests_left FROM users WHERE id = ?\", (user_id,))\n    row = cursor.fetchone()\n    conn.close()\n    \n    if row:\n        return row['requests_left']\n    return 0",
-    "start_line": 238,
-    "end_line": 251,
+    "start_line": 250,
+    "end_line": 263,
     "description": "The `get_user_requests_left` function retrieves the number of API requests remaining for a given user. It takes a user ID as an integer input.  The function first resets daily request counters using `reset_daily_requests()`. It then queries a database, fetching the `requests_left` value from the 'users' table based on the provided `user_id`.  The function returns the integer value of `requests_left`, or 0 if the user is not found in the database.  Database connection management is handled internally."
+  },
+  {
+    "type": "function",
+    "name": "reset_user_requests",
+    "filepath": "app/database.py",
+    "filename": "database.py",
+    "content": "def reset_user_requests(user_id: int) -> bool:\n    \"\"\"Reset user's requests to 50.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"\"\"\n        UPDATE users \n        SET requests_left = 50\n        WHERE id = ?\n    \"\"\", (user_id,))\n    \n    success = cursor.rowcount > 0\n    conn.commit()\n    conn.close()\n    \n    return success",
+    "start_line": 266,
+    "end_line": 281,
+    "description": "The `reset_user_requests` function resets a user's request allowance in a database. It takes a `user_id` (integer) as input. It connects to the database, executes an SQL UPDATE statement to set the `requests_left` column to 50 for the specified user ID. It then checks if the update affected any rows.  The function returns `True` if the update was successful (user exists), and `False` otherwise.  The database connection is committed and closed."
   },
   {
     "type": "function",
@@ -205,8 +225,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def add_chat_history(\n    user_id: int,\n    query_type: str,\n    query_text: Optional[str] = None,\n    query_image_base64: Optional[str] = None,\n    response_text: Optional[str] = None,\n    response_results: Optional[str] = None,\n    model_type: Optional[str] = None\n):\n    \"\"\"Add a chat history entry.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"\"\"\n        INSERT INTO chat_history \n        (user_id, query_type, query_text, query_image_base64, response_text, response_results, model_type)\n        VALUES (?, ?, ?, ?, ?, ?, ?)\n    \"\"\", (user_id, query_type, query_text, query_image_base64, response_text, response_results, model_type))\n    \n    conn.commit()\n    conn.close()",
-    "start_line": 254,
-    "end_line": 274,
+    "start_line": 284,
+    "end_line": 304,
     "description": "The `add_chat_history` function stores a user's chat interaction in a database. It takes parameters like `user_id`, `query_type`, `query_text`, `query_image_base64`, `response_text`, `response_results`, and `model_type` to record the conversation details.  It establishes a database connection, constructs an SQL `INSERT` statement, and executes it, saving the information to the `chat_history` table. The function then commits the changes and closes the database connection.  There is no return value."
   },
   {
@@ -215,8 +235,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def get_chat_history(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:\n    \"\"\"Get chat history for a user.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"\"\"\n        SELECT * FROM chat_history \n        WHERE user_id = ? \n        ORDER BY timestamp DESC \n        LIMIT ?\n    \"\"\", (user_id, limit))\n    \n    rows = cursor.fetchall()\n    conn.close()\n    \n    return [dict(row) for row in rows]",
-    "start_line": 277,
-    "end_line": 292,
+    "start_line": 307,
+    "end_line": 322,
     "description": "The `get_chat_history` function retrieves a user's chat history from a database. It takes a `user_id` (integer) as input, specifying which user's history to fetch, and an optional `limit` (integer, defaults to 50) to restrict the number of returned messages.  It queries the `chat_history` table, filtering by `user_id` and ordering messages by `timestamp` in descending order.  The function returns a list of dictionaries, where each dictionary represents a chat message retrieved from the database."
   },
   {
@@ -225,8 +245,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def add_conversation(\n    user_id: int,\n    mode: str,\n    query: str,\n    response: str,\n    model_type: Optional[str] = None\n):\n    \"\"\"Add a conversation entry (chat or RAG).\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"\"\"\n        INSERT INTO conversation_history \n        (user_id, mode, query, response, model_type)\n        VALUES (?, ?, ?, ?, ?)\n    \"\"\", (user_id, mode, query, response, model_type))\n    \n    conn.commit()\n    conn.close()",
-    "start_line": 295,
-    "end_line": 313,
+    "start_line": 325,
+    "end_line": 343,
     "description": "The `add_conversation` function stores a user's chat interaction into a database. It takes the user's ID, interaction mode (e.g., \"chat\" or \"RAG\"), user query, the system's response, and an optional model type as input. The function establishes a connection to a database, inserts the provided information into the `conversation_history` table, and commits the changes. Finally, it closes the database connection. This process effectively logs each conversational turn."
   },
   {
@@ -235,8 +255,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def get_conversation_history(user_id: int, mode: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:\n    \"\"\"Get conversation history for a user. Optionally filter by mode (chat/rag).\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    if mode:\n        cursor.execute(\"\"\"\n            SELECT * FROM conversation_history \n            WHERE user_id = ? AND mode = ?\n            ORDER BY timestamp DESC \n            LIMIT ?\n        \"\"\", (user_id, mode, limit))\n    else:\n        cursor.execute(\"\"\"\n            SELECT * FROM conversation_history \n            WHERE user_id = ? \n            ORDER BY timestamp DESC \n            LIMIT ?\n        \"\"\", (user_id, limit))\n    \n    rows = cursor.fetchall()\n    conn.close()\n    \n    return [dict(row) for row in rows]",
-    "start_line": 316,
-    "end_line": 339,
+    "start_line": 346,
+    "end_line": 369,
     "description": "The `get_conversation_history` function retrieves a user's conversation history from a database. It takes the `user_id` as a required parameter and optionally filters by `mode` (e.g., \"chat\", \"rag\") and a `limit` on the number of returned messages.  The function queries the `conversation_history` table using SQL, ordering results by timestamp.  It returns a list of dictionaries, where each dictionary represents a conversation entry. The function uses a database connection and cursor to execute the SQL query and fetch the results."
   },
   {
@@ -244,9 +264,9 @@
     "name": "get_recent_chat_messages",
     "filepath": "app/database.py",
     "filename": "database.py",
-    "content": "def get_recent_chat_messages(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:\n    \"\"\"Get recent chat messages for loading chat history (excludes deleted messages).\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"\"\"\n        SELECT query, response, timestamp FROM conversation_history \n        WHERE user_id = ? AND mode = 'chat' AND deleted = 0\n        ORDER BY timestamp ASC \n        LIMIT ?\n    \"\"\", (user_id, limit))\n    \n    rows = cursor.fetchall()\n    conn.close()\n    \n    return [dict(row) for row in rows]",
-    "start_line": 342,
-    "end_line": 357,
+    "content": "def get_recent_chat_messages(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:\n    \"\"\"Get recent chat messages for loading chat history (excludes deleted messages).\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"\"\"\n        SELECT * FROM (\n            SELECT query, response, timestamp FROM conversation_history \n            WHERE user_id = ? AND mode = 'chat' AND deleted = 0\n            ORDER BY timestamp DESC \n            LIMIT ?\n        ) ORDER BY timestamp ASC\n    \"\"\", (user_id, limit))\n    \n    rows = cursor.fetchall()\n    conn.close()\n    \n    return [dict(row) for row in rows]",
+    "start_line": 372,
+    "end_line": 389,
     "description": "The `get_recent_chat_messages` function retrieves a user's recent chat history from a database. It takes a `user_id` (integer) and an optional `limit` (integer, default 10) specifying the number of messages to retrieve. It queries the `conversation_history` table, filtering for messages with the given `user_id`, a `mode` of 'chat', and where `deleted` is 0 (not deleted).  Results are ordered by timestamp (ascending). The function returns a list of dictionaries, where each dictionary represents a chat message, containing the query, response, and timestamp."
   },
   {
@@ -255,8 +275,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def mark_conversations_as_deleted(user_id: int, mode: str = 'chat'):\n    \"\"\"Soft delete conversations for a user by mode (chat/rag/all).\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    if mode == 'all':\n        cursor.execute(\"\"\"\n            UPDATE conversation_history \n            SET deleted = 1\n            WHERE user_id = ?\n        \"\"\", (user_id,))\n    else:\n        cursor.execute(\"\"\"\n            UPDATE conversation_history \n            SET deleted = 1\n            WHERE user_id = ? AND mode = ?\n        \"\"\", (user_id, mode))\n    \n    conn.commit()\n    conn.close()",
-    "start_line": 360,
-    "end_line": 379,
+    "start_line": 392,
+    "end_line": 411,
     "description": "The `mark_conversations_as_deleted` function soft-deletes conversation history entries associated with a specific `user_id` in a database. It takes the `user_id` (integer) and an optional `mode` (string, defaults to 'chat') as input.  Based on the `mode` (either 'chat', 'rag', or 'all'), the function updates the `deleted` flag to 1 in the `conversation_history` table.  If mode is 'all', all conversations for the user are marked as deleted. Otherwise, only conversations matching the user ID and mode are targeted. The function uses a database connection and executes an SQL `UPDATE` statement."
   },
   {
@@ -265,8 +285,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def get_all_users() -> List[Dict[str, Any]]:\n    \"\"\"Get all users for admin panel.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    cursor.execute(\"\"\"\n        SELECT id, username, requests_left, last_reset_date, is_admin, created_at \n        FROM users \n        ORDER BY created_at DESC\n    \"\"\")\n    \n    rows = cursor.fetchall()\n    conn.close()\n    \n    return [dict(row) for row in rows]",
-    "start_line": 382,
-    "end_line": 396,
+    "start_line": 414,
+    "end_line": 428,
     "description": "The `get_all_users` function retrieves user data from a database for administrative purposes.  It connects to the database, executes an SQL `SELECT` query to fetch user details (ID, username, requests left, last reset date, admin status, and creation date), orders them by creation date in descending order, and fetches all results. The function then converts each row into a dictionary and returns a list of these dictionaries, representing the user data.  No parameters are needed.  The return value is a list of user dictionaries."
   },
   {
@@ -275,8 +295,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def get_user_conversations(user_id: int, include_deleted: bool = False) -> List[Dict[str, Any]]:\n    \"\"\"Get all conversations for a specific user (admin function).\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    if include_deleted:\n        cursor.execute(\"\"\"\n            SELECT * FROM conversation_history \n            WHERE user_id = ? \n            ORDER BY timestamp DESC\n        \"\"\", (user_id,))\n    else:\n        cursor.execute(\"\"\"\n            SELECT * FROM conversation_history \n            WHERE user_id = ? AND deleted = 0\n            ORDER BY timestamp DESC\n        \"\"\", (user_id,))\n    \n    rows = cursor.fetchall()\n    conn.close()\n    \n    return [dict(row) for row in rows]",
-    "start_line": 399,
-    "end_line": 420,
+    "start_line": 431,
+    "end_line": 452,
     "description": "The `get_user_conversations` function retrieves a user's conversation history from a database. It takes the `user_id` (integer) as input, and optionally `include_deleted` (boolean, defaults to False) to specify whether to include deleted conversations. The function queries the `conversation_history` table using a SQL `SELECT` statement, applying a filter on the `user_id` and potentially the `deleted` flag. It returns a list of dictionaries, where each dictionary represents a conversation, ordered by timestamp in descending order. The function uses a database connection and cursor to fetch and format the data."
   },
   {
@@ -285,8 +305,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def get_db_stats() -> Dict[str, Any]:\n    \"\"\"Get database statistics for admin panel.\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    \n    stats = {}\n    \n    # Total users\n    cursor.execute(\"SELECT COUNT(*) as count FROM users\")\n    stats['total_users'] = cursor.fetchone()['count']\n    \n    # Total conversations\n    cursor.execute(\"SELECT COUNT(*) as count FROM conversation_history WHERE deleted = 0\")\n    stats['total_conversations'] = cursor.fetchone()['count']\n    \n    # Deleted conversations\n    cursor.execute(\"SELECT COUNT(*) as count FROM conversation_history WHERE deleted = 1\")\n    stats['deleted_conversations'] = cursor.fetchone()['count']\n    \n    # Conversations by mode\n    cursor.execute(\"\"\"\n        SELECT mode, COUNT(*) as count \n        FROM conversation_history \n        WHERE deleted = 0\n        GROUP BY mode\n    \"\"\")\n    stats['conversations_by_mode'] = {row['mode']: row['count'] for row in cursor.fetchall()}\n    \n    conn.close()\n    return stats",
-    "start_line": 423,
-    "end_line": 452,
+    "start_line": 455,
+    "end_line": 484,
     "description": "The `get_db_stats` function retrieves various statistics from a database, primarily for an administrative panel. It connects to the database, executes SQL queries to count users, total conversations (including deleted ones), and conversations grouped by mode. The function returns a dictionary containing these statistics, including counts for `total_users`, `total_conversations`, `deleted_conversations`, and a dictionary `conversations_by_mode` mapping conversation modes to their respective counts. The function uses standard SQL `COUNT` and `GROUP BY` operations."
   },
   {
@@ -295,8 +315,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def image_to_base64(image_path: str) -> str:\n    \"\"\"Convert an image file to base64 string.\"\"\"\n    with open(image_path, 'rb') as image_file:\n        return base64.b64encode(image_file.read()).decode('utf-8')",
-    "start_line": 544,
-    "end_line": 547,
+    "start_line": 576,
+    "end_line": 579,
     "description": "The `image_to_base64` function converts an image file into its base64 string representation.  It takes the image file path (`image_path`, a string) as input. Inside the function, the image is read in binary mode. The function then uses `base64.b64encode` to encode the image's binary content, and  decodes the resulting bytes into a UTF-8 string before returning it. The function simplifies image handling by providing a string representation suitable for embedding in other formats or transmitting over networks."
   },
   {
@@ -305,8 +325,8 @@
     "filepath": "app/database.py",
     "filename": "database.py",
     "content": "def image_file_to_base64(uploaded_file) -> str:\n    \"\"\"Convert an uploaded Streamlit file to base64 string.\"\"\"\n    return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')",
-    "start_line": 550,
-    "end_line": 552,
+    "start_line": 582,
+    "end_line": 584,
     "description": "The `image_file_to_base64` function converts an image file uploaded via Streamlit into its Base64 encoded string representation. It takes a single parameter, `uploaded_file`, which is the Streamlit file object. The function utilizes `uploaded_file.getvalue()` to access the file's content as bytes. This content is then encoded into Base64 using `base64.b64encode()`. Finally, the resulting bytes are decoded into a UTF-8 string, which is then returned. This string can be readily used for display or transfer purposes."
   },
   {
@@ -405,8 +425,8 @@
     "filepath": "app/streamlit_app.py",
     "filename": "streamlit_app.py",
     "content": "    def _render_readme():\n        st.markdown(get_readme_content())",
-    "start_line": 340,
-    "end_line": 341,
+    "start_line": 350,
+    "end_line": 351,
     "description": "The `_render_readme` function displays the content of a README file within a Streamlit application. It retrieves the README content using the `get_readme_content()` function (implementation not shown) and then utilizes `st.markdown()` to render the content as Markdown.  There are no parameters passed to this function, and it doesn't return any explicit values. Its primary purpose is to dynamically display a README file within the user interface, providing documentation or introductory information to the user."
   },
   {
@@ -415,8 +435,8 @@
     "filepath": "app/streamlit_app.py",
     "filename": "streamlit_app.py",
     "content": "    def _render_dataset():\n        st.caption(\"Full contents of data/movies.json\")\n        st.json({\"movies\": get_movies_dataset()})",
-    "start_line": 345,
-    "end_line": 347,
+    "start_line": 355,
+    "end_line": 357,
     "description": "The `_render_dataset` function displays the entire contents of a movie dataset within a Streamlit application. It retrieves the movie data using the `get_movies_dataset()` function. It then presents this data formatted as a JSON object, using `st.json` for clear visualization. A caption \"Full contents of data/movies.json\" is added to provide context for the displayed dataset. This function effectively provides a way to inspect the raw movie data used by the application."
   },
   {
@@ -488,6 +508,66 @@
     "start_line": 107,
     "end_line": 131,
     "description": "The `generate_answer` function crafts responses to user queries using provided documents. It constructs a prompt incorporating the query and document results. Based on the `model_type` parameter, it then generates an answer. If `model_type` is \"local\" and an `ollama_model` is specified, it utilizes `generate_with_ollama`. Otherwise, it uses `generate_with_gemini` and requires an `api_key`. The returned answer aims to be concise, fact-based, and sourced from the provided documents."
+  },
+  {
+    "type": "function",
+    "name": "setup_clean_db",
+    "filepath": "tests/test_backend.py",
+    "filename": "test_backend.py",
+    "content": "def setup_clean_db():\n    \"\"\"Reset DB for testing\"\"\"\n    conn = get_db_connection()\n    cursor = conn.cursor()\n    cursor.execute(\"DELETE FROM users WHERE username LIKE 'test_%'\")\n    cursor.execute(\"DELETE FROM chat_history WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'test_%')\")\n    conn.commit()\n    conn.close()",
+    "start_line": 16,
+    "end_line": 23,
+    "description": "The `setup_clean_db` function prepares a database for testing. It establishes a connection and deletes all test users and their associated chat history.  Specifically, it targets user records with usernames starting with \"test_\" and removes corresponding entries from both the `users` and `chat_history` tables. The function utilizes SQL `DELETE` commands and nested queries for efficient data removal, ensuring a clean slate before test execution. It commits the changes and closes the database connection."
+  },
+  {
+    "type": "function",
+    "name": "test_unique_usernames",
+    "filepath": "tests/test_backend.py",
+    "filename": "test_backend.py",
+    "content": "def test_unique_usernames():\n    print(\"Testing Unique Usernames...\")\n    username = \"test_user_unique\"\n    password = \"password123\"\n    \n    # First registration\n    success, msg, _ = register_user(username, password)\n    if not success:\n        print(f\"\u274c First registration failed: {msg}\")\n        return\n    print(\"\u2705 First registration successful\")\n    \n    # Duplicate registration\n    success, msg, _ = register_user(username, password)\n    if not success and \"already exists\" in msg:\n        print(\"\u2705 Duplicate registration failed as expected\")\n    else:\n        print(f\"\u274c Duplicate registration should have failed but got: {success}, {msg}\")",
+    "start_line": 25,
+    "end_line": 42,
+    "description": "The `test_unique_usernames` function verifies that a user registration system enforces unique usernames. It first registers a user with a specified username and password using a `register_user` function (assumed). It then attempts to register the same user again. The core logic checks if the second registration fails, and importantly, if the error message indicates the username already exists. This function prints success or failure messages to the console based on the outcome of each registration attempt, ensuring the system prevents duplicate usernames."
+  },
+  {
+    "type": "function",
+    "name": "test_chat_privacy",
+    "filepath": "tests/test_backend.py",
+    "filename": "test_backend.py",
+    "content": "def test_chat_privacy():\n    print(\"\\nTesting Chat Privacy...\")\n    user1 = \"test_user_1\"\n    user2 = \"test_user_2\"\n    pwd = \"password123\"\n    \n    register_user(user1, pwd)\n    register_user(user2, pwd)\n    \n    u1_id, _ = authenticate_user(user1, pwd)\n    u2_id, _ = authenticate_user(user2, pwd)\n    \n    # Add chat for User 1\n    add_chat_history(u1_id, \"chat\", query_text=\"User 1 Secret\")\n    \n    # Add chat for User 2\n    add_chat_history(u2_id, \"chat\", query_text=\"User 2 Secret\")\n    \n    # Check User 1 sees only their chat\n    chats1 = get_chat_history(u1_id)\n    if len(chats1) == 1 and chats1[0]['query_text'] == \"User 1 Secret\":\n        print(\"\u2705 User 1 sees only their chat\")\n    else:\n        print(f\"\u274c User 1 saw: {[c['query_text'] for c in chats1]}\")\n\n    # Check User 2 sees only their chat\n    chats2 = get_chat_history(u2_id)\n    if len(chats2) == 1 and chats2[0]['query_text'] == \"User 2 Secret\":\n        print(\"\u2705 User 2 sees only their chat\")\n    else:\n        print(f\"\u274c User 2 saw: {[c['query_text'] for c in chats2]}\")",
+    "start_line": 44,
+    "end_line": 74,
+    "description": "The `test_chat_privacy` function validates the privacy of chat history within a system. It registers two users, authenticates them, and adds a unique chat entry for each. The function then verifies that each user can only retrieve their own chat history using `get_chat_history`. Key parameters include usernames, passwords, and chat content (e.g., \"User 1 Secret\"). The function uses `register_user`, `authenticate_user`, and `add_chat_history` (assumed functions) to setup the scenario and determines success by comparing the retrieved chat history length and content."
+  },
+  {
+    "type": "function",
+    "name": "test_rag_rewrite",
+    "filepath": "tests/test_backend.py",
+    "filename": "test_backend.py",
+    "content": "def test_rag_rewrite():\n    print(\"\\nTesting RAG Rewrite...\")\n    query = \"test query\"\n    rewritten = rewrite_query(query, api_key=None)\n    \n    print(f\"Original: {query}\")\n    print(f\"Rewritten: {rewritten}\")\n    \n    if rewritten and isinstance(rewritten, str):\n        print(\"\u2705 Rewrite returned a string\")\n    else:\n        print(f\"\u274c Rewrite failed to return string: {rewritten}\")",
+    "start_line": 100,
+    "end_line": 111,
+    "description": "The `test_rag_rewrite` function evaluates the functionality of a Retrieval-Augmented Generation (RAG) query rewriting mechanism. It takes a predefined test query and utilizes the `rewrite_query` function (not defined here) to modify it. The function then prints both the original and rewritten queries for inspection. It validates the output by ensuring a string is returned, indicating successful query modification. The optional `api_key` parameter is passed to the `rewrite_query` function, but it's set to `None` in this test."
+  },
+  {
+    "type": "function",
+    "name": "test_search_modes",
+    "filepath": "tests/test_backend.py",
+    "filename": "test_backend.py",
+    "content": "def test_search_modes():\n    print(\"\\nTesting Search Modes...\")\n    rag = CodebaseRAG()\n    # Mock embeddings to avoid full load if possible, or just test logic\n    # For now, we'll just check if the method accepts the modes without crashing\n    \n    modes = [\"concept\", \"simple\", \"hyde\"]\n    query = \"database connection\"\n    \n    for mode in modes:\n        try:\n            # We don't expect actual results without a full index, but we check for crashes\n            # Note: This might print warnings about missing embeddings, which is expected\n            rag.search(query, limit=1, mode=mode)\n            print(f\"\u2705 Search mode '{mode}' executed without error\")\n        except Exception as e:\n            print(f\"\u274c Search mode '{mode}' failed: {e}\")",
+    "start_line": 113,
+    "end_line": 129,
+    "description": "The `test_search_modes` function verifies the functionality of different search modes within a `CodebaseRAG` object. It iterates through a predefined list of search modes (\"concept\", \"simple\", \"hyde\"). For each mode, it calls the `rag.search()` method with a sample query and checks for exceptions. The function doesn't rely on actual search results, focusing instead on whether the different search modes execute without crashing, demonstrating the method's ability to handle various search strategies."
+  },
+  {
+    "type": "function",
+    "name": "test_registration_validation",
+    "filepath": "tests/test_backend.py",
+    "filename": "test_backend.py",
+    "content": "def test_registration_validation():\n    print(\"\\nTesting Registration Validation...\")\n    # Test short password\n    success, msg, uid = register_user(\"valid_user\", \"short\")\n    if not success and uid is None:\n        print(\"\u2705 Short password validation passed (returns 3 values)\")\n    else:\n        print(f\"\u274c Short password validation failed signature check: {success}, {msg}, {uid}\")",
+    "start_line": 131,
+    "end_line": 138,
+    "description": "The `test_registration_validation` function validates user registration password requirements. It tests a \"short\" password scenario by attempting to register a user with a password less than the required minimum length, using the `register_user` function. The function then verifies the return values. It checks if the registration was unsuccessful (`success` is `False`), that a descriptive message (`msg`) is returned, and that the user ID (`uid`) is None. Success is indicated by printing a \"\u2705\" symbol and failure with an \"\u274c\" symbol and details."
   },
   {
     "type": "function",
@@ -1201,12 +1281,22 @@
   },
   {
     "type": "function",
+    "name": "_load_readme_context",
+    "filepath": "cli/lib/codebase_rag.py",
+    "filename": "codebase_rag.py",
+    "content": "def _load_readme_context() -> str:\n    \"\"\"Helper to load README content for context.\"\"\"\n    readme_content = \"\"\n    try:\n        root_readme = os.path.join(PROJECT_ROOT, \"README.md\")\n        if os.path.exists(root_readme):\n            with open(root_readme, \"r\") as f:\n                readme_content += f\"\\n--- Root README ---\\n{f.read()}\"\n        \n        cli_readme = os.path.join(PROJECT_ROOT, \"cli\", \"README.md\")\n        if os.path.exists(cli_readme):\n            with open(cli_readme, \"r\") as f:\n                readme_content += f\"\\n--- CLI README ---\\n{f.read()}\"\n    except Exception:\n        pass\n    return readme_content",
+    "start_line": 26,
+    "end_line": 41,
+    "description": "The `_load_readme_context` function retrieves and concatenates the content of README files within a project. It attempts to read \"README.md\" files located in both the project's root directory and the \"cli\" subdirectory. If either file exists, its content is prepended with a section header and appended to a combined string.  The function utilizes `os.path.join` to construct file paths and handles potential file I/O errors gracefully by ignoring them. It returns a string containing the concatenated README content or an empty string if no README files are found or an error occurs."
+  },
+  {
+    "type": "function",
     "name": "rewrite_query",
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
-    "content": "def rewrite_query(query: str, api_key: str = None) -> str:\n    \"\"\"\n    Rewrites a user query to be more suitable for searching function descriptions.\n    Focus on expanding the query with related concepts and technical terms.\n    \"\"\"\n    if not api_key:\n        api_key = os.getenv(\"GEMINI_API_KEY\")\n    \n    if not api_key:\n        return query # Fallback to original query if no key\n        \n    try:\n        client = genai.Client(api_key=api_key)\n        prompt = f\"\"\"You are a search query expert. Your task is to rewrite user questions into comprehensive search queries that will match against technical function descriptions.\n\nThe search system uses function descriptions (not code or function names), so focus on:\n- Key concepts and technical terms related to the question\n- Related operations, processes, or workflows\n- Alternative phrasings and synonyms\n- Domain-specific terminology\n\nExamples:\n\nUser: \"How do I log in?\"\nRewritten: \"user authentication login session management credential verification password check login process user authorization\"\n\nUser: \"Where is the database connection handled?\"\nRewritten: \"database connection management session creation database initialization connection pooling database setup establish connection\"\n\nUser: \"Show me the code for searching movies\"\nRewritten: \"movie search functionality search implementation query processing search results retrieval movie lookup find movies\"\n\nUser: \"How are images processed?\"\nRewritten: \"image processing image manipulation encoding decoding image transformation image handling base64 conversion\"\n\nUser: \"{query}\"\nRewritten:\"\"\"\n        \n        response = client.models.generate_content(model=\"gemini-2.0-flash\", contents=prompt)\n        rewritten = response.text.strip().replace('\"', '')\n        return rewritten\n    except Exception as e:\n        print(f\"Error rewriting query: {e}\")\n        return query",
-    "start_line": 26,
-    "end_line": 69,
+    "content": "def rewrite_query(query: str, api_key: str = None) -> str:\n    \"\"\"\n    Rewrites a user query to be more suitable for searching function descriptions.\n    Focus on expanding the query with related concepts and technical terms.\n    \"\"\"\n    if not api_key:\n        api_key = os.getenv(\"GEMINI_API_KEY\")\n    \n    if not api_key:\n        return query # Fallback to original query if no key\n        \n    try:\n        client = genai.Client(api_key=api_key)\n        \n        # Load README content\n        readme_content = _load_readme_context()\n\n        prompt = f\"\"\"You are a helpful assistant for Hoopla. Your task is to rewrite the user query into a decent-sized, technical search query suitable for RAG (Retrieval Augmented Generation) against the codebase.\n        \n        Use the following context from the project READMEs to understand the terminology:\n        {readme_content}\n        \n        User Query: \"{query}\"\n        \n        Rewritten Query (just the query text, no quotes or explanations):\"\"\"\n        \n        response = client.models.generate_content(model=\"gemini-2.0-flash\", contents=prompt)\n        rewritten = response.text.strip().replace('\"', '')\n        return rewritten\n    except Exception as e:\n        print(f\"Error rewriting query: {e}\")\n        return query",
+    "start_line": 43,
+    "end_line": 74,
     "description": "The `rewrite_query` function enhances user search queries for technical function descriptions. It uses a Gemini API call (requiring an API key) to expand the original query with related concepts, technical terms, and alternative phrasings. The expanded query aims to improve the search's ability to match against relevant function descriptions. If an API key is unavailable or the API call fails, the function defaults to returning the original query."
   },
   {
@@ -1215,8 +1305,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "def build_codebase_index_command():\n    rag = CodebaseRAG()\n    rag.build_index()",
-    "start_line": 463,
-    "end_line": 465,
+    "start_line": 531,
+    "end_line": 533,
     "description": "The `build_codebase_index_command` function constructs an index for a codebase, facilitating efficient retrieval of code-related information.  It initializes a `CodebaseRAG` object, presumably responsible for managing the indexing process.  The core functionality lies within the `rag.build_index()` call, which generates the index using an unspecified algorithm within the `CodebaseRAG` class.  The function itself takes no parameters and doesn't explicitly return a value, instead modifying the state of the `CodebaseRAG` object by building the index."
   },
   {
@@ -1225,8 +1315,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "def search_codebase_command(query: str, limit: int = 5):\n    rag = CodebaseRAG()\n    results = rag.search(query, limit)\n    for i, res in enumerate(results, 1):\n        print(f\"{i}. {res['filename']}:{res['name']} (Score: {res['score']:.4f})\")\n        print(f\"   {res['filepath']}\")",
-    "start_line": 467,
-    "end_line": 472,
+    "start_line": 535,
+    "end_line": 540,
     "description": "The `search_codebase_command` function searches a codebase for code snippets matching a given `query`. It utilizes a `CodebaseRAG` object (assumed to be a Retrieval-Augmented Generation system).  The function takes a `query` string and an optional `limit` (defaulting to 5) specifying the maximum number of results. It calls the `search` method of the `CodebaseRAG` object.  The results, each containing filename, function/class name, file path and score, are then printed to the console in a user-friendly numbered format, including the file path and score."
   },
   {
@@ -1235,8 +1325,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def __init__(self, root_dir: str, api_key: str = None):\n        self.root_dir = root_dir\n        self.ignore_patterns = self._load_gitignore()\n        self.api_key = api_key or os.getenv(\"GEMINI_API_KEY\")\n        self._rate_limit_hit = False  # Circuit breaker flag\n        self.cached_descriptions = self._load_cached_descriptions()\n        \n        if self.api_key:\n            self.client = genai.Client(api_key=self.api_key)\n        else:\n            self.client = None\n            print(\"Warning: No Gemini API key found. AI descriptions will be disabled.\")",
-    "start_line": 72,
-    "end_line": 83,
+    "start_line": 77,
+    "end_line": 88,
     "description": "The `__init__` function initializes an object likely designed for semantic search or information retrieval. It loads a SentenceTransformer model (`all-MiniLM-L6-v2`) for generating sentence embeddings and a CrossEncoder model (`cross-encoder/ms-marco-MiniLM-L-6-v2`) for reranking results.  It also initializes instance variables to store text chunks (`self.chunks`), their embeddings (`self.embeddings`), and potentially a keyword index (`self.keyword_index`).  These initialized attributes are crucial for processing text and retrieving relevant information."
   },
   {
@@ -1245,8 +1335,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def _load_cached_descriptions(self) -> Dict[str, str]:\n        \"\"\"Load existing descriptions from cache/codebase_data.json to avoid re-generation.\"\"\"\n        cache_path = os.path.join(CACHE_DIR, \"codebase_data.json\")\n        descriptions = {}\n        if os.path.exists(cache_path):\n            try:\n                with open(cache_path, \"r\", encoding=\"utf-8\") as f:\n                    data = json.load(f)\n                    for item in data:\n                        # Key by filename:function_name\n                        key = f\"{item['filename']}:{item['name']}\"\n                        descriptions[key] = item['description']\n                print(f\"Loaded {len(descriptions)} cached descriptions.\")\n            except Exception as e:\n                print(f\"Error loading cached descriptions: {e}\")\n        return descriptions",
-    "start_line": 85,
-    "end_line": 100,
+    "start_line": 90,
+    "end_line": 105,
     "description": "The `_load_cached_descriptions` function retrieves previously generated code descriptions from a JSON cache file, \"codebase_data.json\".  It attempts to read the file located within a specified cache directory. The function parses the JSON data, creates a dictionary where the keys are file:function names (e.g., \"my_file.py:my_function\"), and the values are the corresponding descriptions. If the cache file exists and can be read successfully, it returns the dictionary of loaded descriptions. Otherwise, it returns an empty dictionary, handling potential file reading errors gracefully."
   },
   {
@@ -1255,8 +1345,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def _load_gitignore(self) -> List[str]:\n        gitignore_path = os.path.join(self.root_dir, \".gitignore\")\n        patterns = []\n        if os.path.exists(gitignore_path):\n            with open(gitignore_path, \"r\") as f:\n                for line in f:\n                    line = line.strip()\n                    if line and not line.startswith(\"#\"):\n                        patterns.append(line)\n        # Add default ignores\n        patterns.extend([\".git\", \"__pycache__\", \"*.pyc\", \".DS_Store\", \".venv\", \".env\"])\n        return patterns",
-    "start_line": 102,
-    "end_line": 113,
+    "start_line": 107,
+    "end_line": 118,
     "description": "The `_load_gitignore` function retrieves ignore patterns from a project's `.gitignore` file. It reads each line, discarding comments and empty lines, and appends the valid patterns to a list. Key parameters include the implicit `self.root_dir`, representing the project's root directory. It then extends the list with a set of default ignore patterns. The function returns a list of strings, each string representing a file or directory pattern to be ignored during operations like code analysis or file comparisons."
   },
   {
@@ -1265,8 +1355,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def _is_ignored(self, path: str) -> bool:\n        rel_path = os.path.relpath(path, self.root_dir)\n        filename = os.path.basename(path)\n        \n        # Explicitly ignore admin_panel_ui.py\n        if filename == \"admin_panel_ui.py\":\n            return True\n            \n        for pattern in self.ignore_patterns:\n            if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(filename, pattern):\n                return True\n            # Handle directory matching\n            if os.path.isdir(path) and fnmatch.fnmatch(rel_path + \"/\", pattern):\n                return True\n        return False",
-    "start_line": 115,
-    "end_line": 129,
+    "start_line": 120,
+    "end_line": 134,
     "description": "The `_is_ignored` function determines if a given file path should be ignored based on pre-defined patterns. It takes a `path` (string) as input. It first checks for an explicit ignore condition (`admin_panel_ui.py`). Then, it compares the relative path and filename against a list of `ignore_patterns` using `fnmatch`. If any pattern matches either the relative path, filename, or the relative path plus a trailing slash (for directories), the function returns `True`, indicating the file should be ignored. Otherwise, it returns `False`."
   },
   {
@@ -1275,8 +1365,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def generate_description(self, code: str, function_name: str) -> str:\n        \"\"\"Generate an AI description for a function using Gemini with retry logic.\"\"\"\n        # Check circuit breaker\n        if self._rate_limit_hit:\n            return f\"Function {function_name}\"\n            \n        if not self.client:\n            return f\"Function {function_name}\"\n        \n        max_retries = 5\n        base_delay = 2  # Start with 2 seconds\n        \n        for attempt in range(max_retries):\n            try:\n                prompt = f\"\"\"You are a technical documentation expert. Write a concise 50-100 word description of what this Python function does. Focus on:\n- What the function accomplishes\n- Key parameters and return values\n- Important logic or algorithms used\n\nFunction name: {function_name}\n\nCode:\n```python\n{code}\n```\n\nDescription:\"\"\"\n                \n                response = self.client.models.generate_content(model=\"gemini-2.0-flash-lite\", contents=prompt)\n                description = response.text.strip()\n                \n                # Add a small delay between successful requests to avoid hitting rate limits\n                time.sleep(0.5)\n                \n                return description\n                \n            except Exception as e:\n                error_str = str(e)\n                \n                # Check if it's a rate limit error\n                if \"429\" in error_str or \"RESOURCE_EXHAUSTED\" in error_str:\n                    if attempt < max_retries - 1:\n                        # Exponential backoff: 2, 4, 8, 16, 32 seconds\n                        delay = base_delay * (2 ** attempt)\n                        print(f\"Rate limit hit for {function_name}, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})\")\n                        time.sleep(delay)\n                        continue\n                    else:\n                        print(f\"Max retries reached for {function_name}. Disabling AI descriptions for this session.\")\n                        self._rate_limit_hit = True  # Trip circuit breaker\n                        return f\"Function {function_name}\"\n                else:\n                    # Non-rate-limit error, fail immediately\n                    print(f\"Error generating description for {function_name}: {e}\")\n                    return f\"Function {function_name}\"\n        \n        return f\"Function {function_name}\"",
-    "start_line": 131,
-    "end_line": 187,
+    "start_line": 136,
+    "end_line": 192,
     "description": "The `generate_description` function uses a Gemini AI model to create concise descriptions for Python functions. It takes the function's code and name as input. It constructs a prompt for the AI, sends it to the Gemini model, and retrieves the generated description. Crucially, it incorporates retry logic with exponential backoff to handle potential rate limits or other API errors. If rate limits are consistently hit, a circuit breaker is triggered to prevent future calls, returning a placeholder description. The function prioritizes successful retrieval but gracefully handles and recovers from errors when possible."
   },
   {
@@ -1285,8 +1375,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def chunk_file(self, filepath: str) -> List[Dict[str, Any]]:\n        chunks = []\n        try:\n            with open(filepath, \"r\", encoding=\"utf-8\") as f:\n                content = f.read()\n            \n            tree = ast.parse(content)\n            rel_path = os.path.relpath(filepath, self.root_dir)\n            filename = os.path.basename(filepath)\n\n            for node in ast.walk(tree):\n                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):\n                    # Skip functions with \"admin\" in the name\n                    if \"admin\" in node.name.lower():\n                        continue\n\n                    # Extract function/method\n                    start_line = node.lineno\n                    end_line = node.end_lineno\n                    code_segment = \"\\n\".join(content.splitlines()[start_line-1:end_line])\n                    \n                    # Generate AI description\n                    # Check cache first\n                    cache_key = f\"{filename}:{node.name}\"\n                    if cache_key in self.cached_descriptions and len(self.cached_descriptions[cache_key].split()) > 5:\n                        ai_description = self.cached_descriptions[cache_key]\n                        # print(f\"Using cached description for {node.name}\")\n                    else:\n                        ai_description = self.generate_description(code_segment, node.name)\n                    \n                    chunk = {\n                        \"type\": \"function\",\n                        \"name\": node.name,\n                        \"filepath\": rel_path,\n                        \"filename\": filename,\n                        \"content\": code_segment,\n                        \"start_line\": start_line,\n                        \"end_line\": end_line,\n                        \"description\": ai_description\n                    }\n                    chunks.append(chunk)\n                elif isinstance(node, ast.ClassDef):\n                     # We might want to chunk the class definition itself (docstring + signature)\n                     # but usually methods are more useful. \n                     # Let's add a chunk for the class docstring/signature if needed.\n                     # For now, focusing on methods/functions as requested.\n                     pass\n                     \n        except Exception as e:\n            print(f\"Error parsing {filepath}: {e}\")\n            # Fallback or skip? Skip for now.\n        \n        return chunks",
-    "start_line": 189,
-    "end_line": 241,
+    "start_line": 194,
+    "end_line": 246,
     "description": "The `chunk_file` function processes a Python file to extract and describe its functions. It parses the file's abstract syntax tree (AST) to identify function definitions.  For each function (excluding those with \"admin\" in the name), it extracts the code segment, its name, and line numbers. It then either retrieves a pre-generated AI description from a cache or uses a `generate_description` function to create a description for the function based on its code. The function returns a list of dictionaries, where each dictionary represents a code chunk with function details and its associated description."
   },
   {
@@ -1295,8 +1385,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def walk_and_chunk(self) -> List[Dict[str, Any]]:\n        all_chunks = []\n        for root, dirs, files in os.walk(self.root_dir):\n            # Modify dirs in-place to skip ignored directories\n            dirs[:] = [d for d in dirs if not self._is_ignored(os.path.join(root, d))]\n            \n            for file in files:\n                filepath = os.path.join(root, file)\n                if self._is_ignored(filepath):\n                    continue\n                if not file.endswith(\".py\"): # Only chunk python files for AST\n                    continue\n                \n                chunks = self.chunk_file(filepath)\n                all_chunks.extend(chunks)\n        return all_chunks",
-    "start_line": 243,
-    "end_line": 258,
+    "start_line": 248,
+    "end_line": 263,
     "description": "The `walk_and_chunk` function recursively traverses a directory, `self.root_dir`, and processes Python files. It uses `os.walk` to list files, skipping those ignored by `_is_ignored()`.  For each Python file, it calls `self.chunk_file` to generate \"chunks\" (likely code segments based on AST analysis). It modifies the `dirs` list in-place to exclude ignored directories. The function returns a list of all collected chunks, represented as dictionaries."
   },
   {
@@ -1304,10 +1394,20 @@
     "name": "__init__",
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
-    "content": "    def __init__(self, root_dir: str = PROJECT_ROOT, api_key: str = None):\n        self.root_dir = root_dir\n        self.api_key = api_key\n        self.model = SentenceTransformer('all-MiniLM-L6-v2')\n        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')\n        self.chunks = []\n        self.embeddings = None  # Description embeddings (HyDE)\n        self.code_embeddings = None  # Code content embeddings\n        self.keyword_index = None",
-    "start_line": 261,
-    "end_line": 269,
+    "content": "    def __init__(self, root_dir: str = PROJECT_ROOT, api_key: str = None):\n        self.root_dir = root_dir\n        self.api_key = api_key or os.getenv(\"GEMINI_API_KEY\")\n        self.model = SentenceTransformer('all-MiniLM-L6-v2')\n        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')\n        self.chunks = []\n        self.chunks = []\n        self.embeddings = None  # Description embeddings (Concept Search)\n        self.code_embeddings = None  # Code content embeddings (SimpleRAG / HyDE)\n        self.keyword_index = None",
+    "start_line": 266,
+    "end_line": 275,
     "description": "The `__init__` function initializes an object likely designed for semantic search or information retrieval. It loads a SentenceTransformer model (`all-MiniLM-L6-v2`) for generating sentence embeddings and a CrossEncoder model (`cross-encoder/ms-marco-MiniLM-L-6-v2`) for reranking results.  It also initializes instance variables to store text chunks (`self.chunks`), their embeddings (`self.embeddings`), and potentially a keyword index (`self.keyword_index`).  These initialized attributes are crucial for processing text and retrieving relevant information."
+  },
+  {
+    "type": "function",
+    "name": "generate_hypothetical_code",
+    "filepath": "cli/lib/codebase_rag.py",
+    "filename": "codebase_rag.py",
+    "content": "    def generate_hypothetical_code(self, query: str) -> str:\n        \"\"\"\n        Generates a hypothetical code snippet based on the user query (Actual HyDE).\n        \"\"\"\n        if not self.api_key:\n            return query\n            \n        try:\n            client = genai.Client(api_key=self.api_key)\n            \n            # Load README context to help the LLM understand the codebase\n            readme_context = _load_readme_context()\n            \n            prompt = f\"\"\"You are an expert Python developer. Write a hypothetical Python function or code snippet that would answer the following user query.\n            \n            Context from Project READMEs:\n            {readme_context}\n            \n            User Query: \"{query}\"\n            \n            Do not include any explanations or markdown formatting. Just provide the raw Python code that might exist in a codebase to solve this problem.\n\n            Example:\n            Query: \"tell me about hybrid search\"\n            Response:\n            def hybrid_search(self, query: str, limit: int = 10):\n                # Perform keyword search\n                bm25_results = self.keyword_index.search(query, limit=limit)\n                \n                # Perform semantic search\n                semantic_results = self.vector_store.search(query, limit=limit)\n                \n                # Combine results using RRF\n                combined_results = self.rrf_fusion(bm25_results, semantic_results)\n                return combined_results\n            \n            Generated Hypothetical Code:\"\"\"\n            \n            response = client.models.generate_content(model=\"gemini-2.0-flash\", contents=prompt)\n            return response.text.strip()\n        except Exception as e:\n            print(f\"Error generating hypothetical code: {e}\")\n            return query",
+    "start_line": 277,
+    "end_line": 319,
+    "description": "The `generate_hypothetical_code` function uses a large language model (LLM) to create a code snippet based on a user's natural language query (HyDE - Hypothetical Document Embeddings). It takes the query as input and, leveraging a Gemini API client, constructs a prompt to instruct the LLM to generate a relevant Python code example. If successful, the function returns the generated code. Otherwise, if an API key is missing or an error occurs during the API call, the original query is returned."
   },
   {
     "type": "function",
@@ -1315,8 +1415,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def build_index(self):\n        chunker = CodebaseChunker(self.root_dir, api_key=self.api_key)\n        self.chunks = chunker.walk_and_chunk()\n        \n        if not self.chunks:\n            print(\"No chunks found.\")\n            return\n\n        # Embed descriptions (HyDE mode)\n        texts = [c['description'] for c in self.chunks]\n        print(f\"Generating description embeddings for {len(texts)} chunks...\")\n        self.embeddings = self.model.encode(texts, show_progress_bar=True)\n        \n        # Embed code content (Code mode)\n        # Include metadata to help with context\n        code_texts = [f\"File: {c['filename']}\\nFunction: {c['name']}\\n{c['content']}\" for c in self.chunks]\n        print(f\"Generating code embeddings for {len(code_texts)} chunks...\")\n        self.code_embeddings = self.model.encode(code_texts, show_progress_bar=True)\n        \n        # Build keyword index\n        print(\"Building keyword index...\")\n        # Convert chunks to documents format for InvertedIndex\n        docs_for_index = []\n        for idx, chunk in enumerate(self.chunks):\n            docs_for_index.append({\n                'id': idx,\n                'title': chunk['name'],\n                'description': chunk['description']\n            })\n        \n        self.keyword_index = InvertedIndex()\n        self.keyword_index = InvertedIndex()\n        self.keyword_index.build_from_documents(docs_for_index)\n        \n        self.keyword_index.build_from_documents(docs_for_index)\n        \n        print(f\"DEBUG: docs_for_index size: {len(docs_for_index)}\")\n        print(f\"DEBUG: keyword_index.docmap size: {len(self.keyword_index.docmap)}\")\n        \n        self.save_index()",
-    "start_line": 271,
-    "end_line": 310,
+    "start_line": 321,
+    "end_line": 360,
     "description": "The `build_index` function processes a codebase to create search indexes. It uses a `CodebaseChunker` to extract code chunks, then generates embeddings for chunk descriptions using a pre-trained model. It then constructs a keyword index (`InvertedIndex`) from the chunk data, enabling keyword-based search. Finally, the function saves the generated index.  Key parameters include the codebase root (implicit in `CodebaseChunker`) and a pre-trained embedding model (`self.model`). It returns nothing directly but populates internal data structures, including `self.chunks`, `self.embeddings`, and `self.keyword_index`."
   },
   {
@@ -1325,8 +1425,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def save_index(self):\n        os.makedirs(CACHE_DIR, exist_ok=True)\n        with open(CODEBASE_INDEX_PATH, \"wb\") as f:\n            pickle.dump(self.chunks, f)\n        np.save(CODEBASE_EMBEDDINGS_PATH, self.embeddings)\n        np.save(CODEBASE_EMBEDDINGS_CODE_PATH, self.code_embeddings)\n        \n        # Save keyword index\n        if self.keyword_index:\n            with open(CODEBASE_KEYWORD_INDEX_PATH, \"wb\") as f:\n                pickle.dump(self.keyword_index, f)\n        \n        # Also save as JSON for transparency\n        json_path = os.path.join(CACHE_DIR, \"codebase_data.json\")\n        with open(json_path, \"w\", encoding=\"utf-8\") as f:\n            json.dump(self.chunks, f, indent=2)\n            \n        print(f\"Index saved to {CODEBASE_INDEX_PATH}\")\n        print(f\"Metadata saved to {json_path}\")",
-    "start_line": 312,
-    "end_line": 330,
+    "start_line": 362,
+    "end_line": 380,
     "description": "The `save_index` function persists code analysis data to disk. It saves the codebase's indexed chunks ( `self.chunks`) and their corresponding embeddings (`self.embeddings`) using `pickle` and `numpy` respectively.  If a keyword index exists (`self.keyword_index`), it's also pickled.  Furthermore, it saves the `self.chunks` as a human-readable JSON file for data transparency. The function utilizes `os.makedirs` to create the cache directory, handles file operations, and prints confirmation messages upon completion."
   },
   {
@@ -1335,8 +1435,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def load_index(self):\n        if not os.path.exists(CODEBASE_INDEX_PATH) or not os.path.exists(CODEBASE_EMBEDDINGS_PATH):\n            print(\"Index not found. Building new index...\")\n            self.build_index()\n            return\n\n        with open(CODEBASE_INDEX_PATH, \"rb\") as f:\n            self.chunks = pickle.load(f)\n        self.embeddings = np.load(CODEBASE_EMBEDDINGS_PATH)\n        \n        if os.path.exists(CODEBASE_EMBEDDINGS_CODE_PATH):\n            self.code_embeddings = np.load(CODEBASE_EMBEDDINGS_CODE_PATH)\n        else:\n            self.code_embeddings = None\n            print(\"Warning: Code embeddings not found. Code search mode will not work until rebuild.\")\n        \n        # Load keyword index\n        if os.path.exists(CODEBASE_KEYWORD_INDEX_PATH):\n            with open(CODEBASE_KEYWORD_INDEX_PATH, \"rb\") as f:\n                self.keyword_index = pickle.load(f)\n        else:\n            print(\"Keyword index not found. Building keyword index from loaded chunks...\")\n            # Build keyword index from existing chunks without full rebuild\n            docs_for_index = []\n            for idx, chunk in enumerate(self.chunks):\n                docs_for_index.append({\n                    'id': idx,\n                    'title': chunk['name'],\n                    'description': chunk['description']\n                })\n            \n            \n            self.keyword_index = InvertedIndex()\n            self.keyword_index.build_from_documents(docs_for_index)\n            \n            # Save just the keyword index\n            with open(CODEBASE_KEYWORD_INDEX_PATH, \"wb\") as f:\n                pickle.dump(self.keyword_index, f)",
-    "start_line": 332,
-    "end_line": 369,
+    "start_line": 382,
+    "end_line": 419,
     "description": "The `load_index` function loads pre-built code index data. It first checks if the index and embeddings files exist. If not, it triggers a rebuild using `self.build_index()`. Otherwise, it loads the indexed code chunks and embeddings from disk using `pickle` and `numpy`. Crucially, it also handles loading or rebuilding a keyword index. If the keyword index file exists, it's loaded.  If missing, the function constructs a keyword index from the loaded code chunks and saves it for future use, optimizing for faster lookups."
   },
   {
@@ -1344,9 +1444,9 @@
     "name": "search",
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
-    "content": "    def search(self, query: str, limit: int = 10, score_threshold: float = 0.01, use_reranking: bool = False, mode: str = \"hyde\") -> List[Dict[str, Any]]:\n        \"\"\"\n        Hybrid search using RRF fusion of semantic and keyword search.\n        mode: \"hyde\" (default, uses description embeddings) or \"code\" (uses code content embeddings)\n        \"\"\"\n        if self.embeddings is None or self.keyword_index is None:\n            self.load_index()\n        \n        # Semantic search\n        query_embedding = self.model.encode(query)\n        \n        # Select embeddings based on mode\n        if mode == \"code\" and self.code_embeddings is not None:\n            target_embeddings = self.code_embeddings\n        else:\n            target_embeddings = self.embeddings\n            \n        semantic_scores = np.dot(target_embeddings, query_embedding) / (\n            np.linalg.norm(target_embeddings, axis=1) * np.linalg.norm(query_embedding)\n        )\n        semantic_indices = np.argsort(semantic_scores)[::-1]\n        \n        # 2. Keyword search (BM25)\n        keyword_results = self.keyword_index.bm25_search(query, limit=limit*3)\n        \n        # 3. RRF Fusion\n        rrf_scores = defaultdict(float)\n        k = DEFAULT_K_VALUE\n        \n        # Add semantic scores\n        for rank, idx in enumerate(semantic_indices):\n            rrf_scores[idx] += rrf_score(rank, k)\n        \n        # Add keyword scores\n        for rank, result in enumerate(keyword_results):\n            idx = result['id']\n            rrf_scores[idx] += rrf_score(rank, k)\n        \n        # Get candidates based on RRF score threshold\n        candidate_count = limit * 3 if use_reranking else limit\n        top_indices = heapq.nlargest(candidate_count, rrf_scores, key=rrf_scores.get)\n        \n        # Filter by score threshold\n        top_indices = [idx for idx in top_indices if rrf_scores[idx] >= score_threshold]\n        \n        if not top_indices:\n            return []\n        \n        # Build initial results\n        results = []\n        for idx in top_indices:\n            if idx < 0 or idx >= len(self.chunks):\n                print(f\"Warning: Index {idx} out of bounds for chunks list (len={len(self.chunks)}). Skipping.\")\n                continue\n                \n            chunk = self.chunks[idx].copy()\n            chunk[\"rrf_score\"] = float(rrf_scores[idx])\n            chunk[\"semantic_score\"] = float(semantic_scores[idx])\n            # Default score to RRF score for compatibility\n            chunk[\"score\"] = chunk[\"rrf_score\"]\n            # print(f\"DEBUG: Assigned score {chunk['score']} to {chunk['name']}\")\n            results.append(chunk)\n        \n        # Apply re-ranking if requested\n        if use_reranking and len(results) > 0:\n            results = self.rerank(query, results, limit)\n        else:\n            results = results[:limit]\n            \n        return results",
-    "start_line": 371,
-    "end_line": 440,
+    "content": "    def search(self, query: str, limit: int = 10, score_threshold: float = 0.01, use_reranking: bool = False, mode: str = \"concept\") -> List[Dict[str, Any]]:\n        \"\"\"\n        Hybrid search using RRF fusion of semantic and keyword search.\n        mode: \n            - \"concept\": uses description embeddings\n            - \"simple\": uses code content embeddings\n            - \"hyde\": generates hypothetical code -> embeds -> searches code embeddings\n        \"\"\"\n        if self.embeddings is None or self.keyword_index is None:\n            self.load_index()\n        \n        # Semantic search\n        search_text = query\n        target_embeddings = self.embeddings # Default to concept search\n        \n        if mode == \"hyde\":\n            # Actual HyDE: Generate hypothetical code, then search against CODE embeddings\n            print(\"Generating hypothetical code for HyDE...\")\n            search_text = self.generate_hypothetical_code(query)\n            print(f\"Hypothetical Code:\\n{search_text[:200]}...\")\n            if self.code_embeddings is not None:\n                target_embeddings = self.code_embeddings\n            else:\n                print(\"Warning: Code embeddings missing for HyDE. Falling back to descriptions.\")\n                \n        elif mode == \"simple\":\n            # SimpleRAG: Search query directly against CODE embeddings\n            if self.code_embeddings is not None:\n                target_embeddings = self.code_embeddings\n            else:\n                print(\"Warning: Code embeddings missing for SimpleRAG. Falling back to descriptions.\")\n        \n        # Calculate cosine similarity\n        query_embedding = self.model.encode(search_text)\n            \n        semantic_scores = np.dot(target_embeddings, query_embedding) / (\n            np.linalg.norm(target_embeddings, axis=1) * np.linalg.norm(query_embedding)\n        )\n        semantic_indices = np.argsort(semantic_scores)[::-1]\n        \n        # 2. Keyword search (BM25)\n        keyword_results = self.keyword_index.bm25_search(query, limit=limit*3)\n        \n        # 3. RRF Fusion\n        rrf_scores = defaultdict(float)\n        k = DEFAULT_K_VALUE\n        \n        # Add semantic scores\n        for rank, idx in enumerate(semantic_indices):\n            rrf_scores[idx] += rrf_score(rank, k)\n        \n        # Add keyword scores\n        for rank, result in enumerate(keyword_results):\n            idx = result['id']\n            rrf_scores[idx] += rrf_score(rank, k)\n        \n        # Get candidates based on RRF score threshold\n        candidate_count = limit * 10 if use_reranking else limit\n        top_indices = heapq.nlargest(candidate_count, rrf_scores, key=rrf_scores.get)\n        \n        # Filter by score threshold\n        top_indices = [idx for idx in top_indices if rrf_scores[idx] >= score_threshold]\n        \n        if not top_indices:\n            return []\n        \n        # Build initial results\n        results = []\n        for idx in top_indices:\n            if idx < 0 or idx >= len(self.chunks):\n                print(f\"Warning: Index {idx} out of bounds for chunks list (len={len(self.chunks)}). Skipping.\")\n                continue\n                \n            chunk = self.chunks[idx].copy()\n            chunk[\"rrf_score\"] = float(rrf_scores[idx])\n            chunk[\"semantic_score\"] = float(semantic_scores[idx])\n            # Default score to RRF score for compatibility\n            chunk[\"score\"] = chunk[\"rrf_score\"]\n            # print(f\"DEBUG: Assigned score {chunk['score']} to {chunk['name']}\")\n            results.append(chunk)\n        \n        # Apply re-ranking if requested\n        if use_reranking and len(results) > 0:\n            results = self.rerank(query, results, limit)\n        else:\n            results = results[:limit]\n            \n        return results",
+    "start_line": 421,
+    "end_line": 508,
     "description": "The `search` function performs a hybrid search, combining semantic and keyword search techniques. It takes a `query` string and optional parameters for `limit`, `score_threshold`, and `use_reranking`. It first conducts semantic search using embeddings and cosine similarity, then performs keyword search using BM25.  These results are fused using Reciprocal Rank Fusion (RRF).  Finally, it filters results based on a score threshold and optionally applies re-ranking before returning a list of dictionaries, each containing a chunk's data along with RRF and semantic scores, and the final score."
   },
   {
@@ -1355,8 +1455,8 @@
     "filepath": "cli/lib/codebase_rag.py",
     "filename": "codebase_rag.py",
     "content": "    def rerank(self, query: str, results: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:\n        \"\"\"Re-rank results using a cross-encoder model.\"\"\"\n        if not results:\n            return results\n        \n        # Prepare pairs for cross-encoder\n        pairs = [[query, f\"{r['description']}\\n{r['content']}\"] for r in results]\n        \n        # Get cross-encoder scores\n        rerank_scores = self.reranker.predict(pairs)\n        \n        # Sort by rerank scores\n        for i, result in enumerate(results):\n            result[\"rerank_score\"] = float(rerank_scores[i])\n            # Update main score to rerank score\n            result[\"score\"] = result[\"rerank_score\"]\n        \n        results.sort(key=lambda x: x[\"rerank_score\"], reverse=True)\n        \n        return results[:limit]",
-    "start_line": 442,
-    "end_line": 461,
+    "start_line": 510,
+    "end_line": 529,
     "description": "The `rerank` function refines search results using a cross-encoder model. It takes a `query`, a list of `results` (dictionaries containing descriptions and content), and a `limit` as input. It forms pairs of the query and result content, then uses the `reranker` model to generate scores for each pair.  It then adds the \"rerank_score\" to the result dictionaries, uses it to set the overall score and sorts the results by these scores, returning the top `limit` results."
   },
   {
@@ -1538,6 +1638,116 @@
     "start_line": 67,
     "end_line": 70,
     "description": "The `read_stopwords` function reads a list of stop words from a file specified by the `STOPWORDS_PATH` constant. It opens the file in read mode, reads all lines, and then splits the content into a list of strings, with each string representing a stop word. The function returns this list of stop words. The core logic involves reading the file and utilizing the `splitlines()` method to separate words based on newline characters."
+  },
+  {
+    "type": "function",
+    "name": "__init__",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def __init__(self):\n        self.chunks = []\n        self.embeddings = None\n        self.model = None\n        self.bm25_index = defaultdict(set)\n        self.doc_lengths = {}\n        self.avg_doc_len = 0\n        self.term_freqs = []\n        self.idf = {}",
+    "start_line": 23,
+    "end_line": 31,
+    "description": "The `__init__` function is the constructor for a class, initializing its core attributes. It sets up internal data structures for text processing and information retrieval. Key initializations include: `chunks` (a list to store text segments), `embeddings` and `model` (likely for embedding generation), `bm25_index` (a dictionary for BM25 indexing), `doc_lengths` (document lengths), `avg_doc_len` (average document length), `term_freqs` (term frequencies), and `idf` (inverse document frequency). These structures lay the groundwork for text indexing, search, and semantic analysis."
+  },
+  {
+    "type": "function",
+    "name": "load_readmes",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def load_readmes(self):\n        documents = []\n        for rel_path in README_FILES:\n            file_path = os.path.join(PROJECT_ROOT, rel_path)\n            if os.path.exists(file_path):\n                with open(file_path, 'r', encoding='utf-8') as f:\n                    content = f.read()\n                    documents.append({\"path\": rel_path, \"content\": content})\n            else:\n                print(f\"Warning: {file_path} not found.\")\n        return documents",
+    "start_line": 33,
+    "end_line": 43,
+    "description": "The `load_readmes` function loads and returns the content of README files within a project. It iterates through a list of relative paths (`README_FILES`) to known README files. For each path, it constructs the absolute file path, checks if the file exists, and reads its content if found.  It returns a list of dictionaries, where each dictionary contains the relative path (\"path\") and the content (\"content\") of a README file.  If a README file is not found, a warning message is printed."
+  },
+  {
+    "type": "function",
+    "name": "chunk_text",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def chunk_text(self, text, source):\n        chunks = []\n        # Simple sliding window chunking\n        for i in range(0, len(text), CHUNK_SIZE - OVERLAP):\n            chunk_content = text[i:i + CHUNK_SIZE]\n            chunks.append({\n                \"source\": source,\n                \"content\": chunk_content,\n                \"id\": len(self.chunks) + len(chunks)\n            })\n        return chunks",
+    "start_line": 45,
+    "end_line": 55,
+    "description": "The `chunk_text` function divides a given text into smaller segments (chunks) using a sliding window approach. It takes the text and a source identifier as input. It iterates through the text, creating chunks of size `CHUNK_SIZE` with an `OVERLAP` to maintain context between chunks. Each chunk is a dictionary containing the source, content, and a unique ID. The function returns a list of these chunk dictionaries."
+  },
+  {
+    "type": "function",
+    "name": "build_index",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def build_index(self):\n        print(\"Building index...\")\n        docs = self.load_readmes()\n        self.chunks = []\n        for doc in docs:\n            self.chunks.extend(self.chunk_text(doc['content'], doc['path']))\n\n        # Semantic Embeddings\n        print(\"Generating embeddings...\")\n        self.model = SentenceTransformer('all-MiniLM-L6-v2')\n        texts = [c['content'] for c in self.chunks]\n        self.embeddings = self.model.encode(texts, show_progress_bar=True)\n\n        # BM25 Indexing\n        print(\"Building BM25 index...\")\n        total_len = 0\n        doc_count = len(self.chunks)\n        \n        for chunk in self.chunks:\n            tokens = self.tokenize(chunk['content'])\n            length = len(tokens)\n            self.doc_lengths[chunk['id']] = length\n            total_len += length\n            \n            counts = Counter(tokens)\n            self.term_freqs.append(counts)\n            \n            for term in counts:\n                self.bm25_index[term].add(chunk['id'])\n\n        self.avg_doc_len = total_len / doc_count if doc_count > 0 else 0\n        \n        # Calculate IDF\n        for term, doc_ids in self.bm25_index.items():\n            df = len(doc_ids)\n            self.idf[term] = math.log((doc_count - df + 0.5) / (df + 0.5) + 1)\n\n        self.save_index()\n        print(f\"Index built with {len(self.chunks)} chunks.\")",
+    "start_line": 57,
+    "end_line": 95,
+    "description": "The `build_index` function constructs a search index from loaded README documents. It first loads and chunks the document content. Then, it generates semantic embeddings using SentenceTransformer. Finally, it builds a BM25 index, tokenizing the chunks, calculating term frequencies, and computing inverse document frequencies (IDF). It stores document lengths and utilizes a BM25 index for efficient search. The function persists the created index and provides the total number of chunks."
+  },
+  {
+    "type": "function",
+    "name": "tokenize",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def tokenize(self, text):\n        return re.findall(r'\\w+', text.lower())",
+    "start_line": 97,
+    "end_line": 98,
+    "description": "The `tokenize` function converts a given text string into a list of individual words. It first converts the input `text` to lowercase. Then, it utilizes the regular expression `\\w+` to find all sequences of word characters (alphanumeric and underscore). The function returns a list where each element is a word extracted from the original text, effectively performing basic word tokenization.  No specific stemming or stop-word removal is performed."
+  },
+  {
+    "type": "function",
+    "name": "save_index",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def save_index(self):\n        os.makedirs(CACHE_DIR, exist_ok=True)\n        with open(INDEX_FILE, 'wb') as f:\n            pickle.dump({\n                'chunks': self.chunks,\n                'embeddings': self.embeddings,\n                'bm25_index': self.bm25_index,\n                'doc_lengths': self.doc_lengths,\n                'avg_doc_len': self.avg_doc_len,\n                'term_freqs': self.term_freqs,\n                'idf': self.idf\n            }, f)",
+    "start_line": 100,
+    "end_line": 111,
+    "description": "The `save_index` function persists a search index to disk. It creates the necessary cache directory if it doesn't exist. It serializes key index components (chunks, embeddings, BM25 index, document lengths, average document length, term frequencies, and IDF values) using the `pickle` module. This serialized data is then written to a file named `INDEX_FILE` within the cache directory, enabling the restoration of the search index for future use."
+  },
+  {
+    "type": "function",
+    "name": "load_index",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def load_index(self):\n        if not os.path.exists(INDEX_FILE):\n            self.build_index()\n            return\n\n        with open(INDEX_FILE, 'rb') as f:\n            data = pickle.load(f)\n            self.chunks = data['chunks']\n            self.embeddings = data['embeddings']\n            self.bm25_index = data['bm25_index']\n            self.doc_lengths = data['doc_lengths']\n            self.avg_doc_len = data['avg_doc_len']\n            self.term_freqs = data['term_freqs']\n            self.idf = data['idf']\n        \n        self.model = SentenceTransformer('all-MiniLM-L6-v2')",
+    "start_line": 113,
+    "end_line": 128,
+    "description": "The `load_index` function loads a pre-built index from a file. If the index file doesn't exist, it first calls a `build_index` function (not shown). Otherwise, it loads pickled data including chunks, embeddings, BM25 index, document lengths, average document length, term frequencies and IDF values. These are used for efficient similarity search. Finally, it initializes a SentenceTransformer model using 'all-MiniLM-L6-v2', likely for generating sentence embeddings."
+  },
+  {
+    "type": "function",
+    "name": "bm25_score",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def bm25_score(self, query, k1=1.5, b=0.75):\n        tokens = self.tokenize(query)\n        scores = defaultdict(float)\n        \n        for term in tokens:\n            if term not in self.idf:\n                continue\n            idf_val = self.idf[term]\n            \n            for doc_id in self.bm25_index[term]:\n                tf = self.term_freqs[doc_id][term]\n                doc_len = self.doc_lengths[doc_id]\n                \n                num = tf * (k1 + 1)\n                den = tf + k1 * (1 - b + b * (doc_len / self.avg_doc_len))\n                scores[doc_id] += idf_val * (num / den)\n        \n        return scores",
+    "start_line": 130,
+    "end_line": 147,
+    "description": "The `bm25_score` function computes BM25 relevance scores for a given query against documents indexed within a search index. It tokenizes the query, then iterates through each term, calculating a score contribution for each document containing the term. Key parameters include `k1` (term frequency saturation) and `b` (document length normalization).  The function uses IDF (Inverse Document Frequency) from the index, term frequencies, and document lengths to calculate the final BM25 score for each document, returning a dictionary of document IDs and their corresponding scores."
+  },
+  {
+    "type": "function",
+    "name": "semantic_search",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def semantic_search(self, query):\n        if self.model is None:\n             self.model = SentenceTransformer('all-MiniLM-L6-v2')\n             \n        query_vec = self.model.encode([query])[0]\n        scores = {}\n        \n        # Cosine similarity\n        norm_q = np.linalg.norm(query_vec)\n        for i, doc_vec in enumerate(self.embeddings):\n            norm_d = np.linalg.norm(doc_vec)\n            if norm_d == 0 or norm_q == 0:\n                score = 0\n            else:\n                score = np.dot(query_vec, doc_vec) / (norm_q * norm_d)\n            scores[self.chunks[i]['id']] = score\n            \n        return scores",
+    "start_line": 149,
+    "end_line": 166,
+    "description": "The `semantic_search` function performs a semantic search to find documents relevant to a given `query`. It uses a SentenceTransformer model (defaults to 'all-MiniLM-L6-v2') to encode the query into a vector.  It then calculates the cosine similarity between the query vector and pre-computed document embeddings (`self.embeddings`).  The function returns a dictionary where keys are document IDs (from `self.chunks`) and values are the similarity scores, indicating how well each document matches the query's semantic meaning."
+  },
+  {
+    "type": "function",
+    "name": "rrf_search",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def rrf_search(self, query, k=60, limit=5):\n        if not self.chunks:\n            self.load_index()\n            \n        bm25_scores = self.bm25_score(query)\n        sem_scores = self.semantic_search(query)\n        \n        # Rank\n        bm25_ranked = sorted(bm25_scores.keys(), key=lambda x: bm25_scores[x], reverse=True)\n        sem_ranked = sorted(sem_scores.keys(), key=lambda x: sem_scores[x], reverse=True)\n        \n        rrf_scores = defaultdict(float)\n        \n        for rank, doc_id in enumerate(bm25_ranked):\n            rrf_scores[doc_id] += 1 / (k + rank + 1)\n            \n        for rank, doc_id in enumerate(sem_ranked):\n            rrf_scores[doc_id] += 1 / (k + rank + 1)\n            \n        top_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)[:limit]\n        return [self.chunks[i] for i in top_ids]",
+    "start_line": 168,
+    "end_line": 188,
+    "description": "The `rrf_search` function performs a search across document chunks using a Reciprocal Rank Fusion (RRF) algorithm. It combines results from BM25 keyword search and semantic search. It takes a `query` string, RRF parameter `k`, and result `limit` as input. Internally, it calculates BM25 and semantic scores, ranks documents based on these scores, and then fuses the ranked lists using RRF. The function returns a list of the top `limit` document chunks, ranked by their combined RRF scores."
+  },
+  {
+    "type": "function",
+    "name": "rewrite_query",
+    "filepath": "cli/lib/readme_rag.py",
+    "filename": "readme_rag.py",
+    "content": "    def rewrite_query(self, query, context_chunks, api_key=None):\n        if not api_key:\n            api_key = os.environ.get(\"GEMINI_API_KEY\")\n        if not api_key:\n            print(\"GEMINI_API_KEY not found.\")\n            return query\n\n        client = genai.Client(api_key=api_key)\n        \n        context_text = \"\\n\\n\".join([f\"Source: {c['source']}\\nContent: {c['content']}\" for c in context_chunks])\n        \n        prompt = f\"\"\"\n        You are a helpful assistant for the Hoopla RAG Toolkit.\n        Based on the following context from the project documentation, rewrite the user's query to be more specific and technical, suitable for a RAG system search.\n        The rewritten query should be a single sentence and should be a direct translation of the user's query into a query that can be used to search the project documentation.\n        \n        Context:\n        {context_text}\n        \n        User Query: {query}\n        \n        Rewritten Query:\n        \"\"\"\n        \n        try:\n            response = client.models.generate_content(\n                model='gemini-2.0-flash',\n                contents=prompt\n            )\n            return response.text.strip()\n        except Exception as e:\n            print(f\"Error rewriting query: {e}\")\n            return query",
+    "start_line": 190,
+    "end_line": 222,
+    "description": "The `rewrite_query` function refines user queries for a Retrieval-Augmented Generation (RAG) system using Google's Gemini API. It takes a user query, context chunks (documentation snippets), and an optional API key.  It constructs a prompt that instructs Gemini to rewrite the query based on the provided context, making it more suitable for a technical search. It returns the rewritten query string. If the Gemini API key is not provided or if an error occurs during the API call, the original query is returned."
   },
   {
     "type": "function",

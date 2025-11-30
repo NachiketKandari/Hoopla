@@ -11,8 +11,16 @@ Handles keyword-based search operations using BM25 and inverted indexes.
 - **BM25 Search:** `python keyword_search_cli.py bm25search "query"`
 - **Inspect:** `python keyword_search_cli.py tf <doc_id> <term>`
 
+### `codebase_rag_cli.py`
+Handles advanced codebase search modes (Concept, SimpleRAG, HyDE).
+- **Build Index:** `python codebase_rag_cli.py build_index`
+- **Search:** `python codebase_rag_cli.py search "query" --mode [concept|simple|hyde]`
+    - `concept`: Search by meaning (AI descriptions).
+    - `simple`: Search by content (Code embeddings).
+    - `hyde`: Search by hypothetical code (Generates code -> Searches code).
+
 ### `semantic_search_cli.py`
-Handles vector-based semantic search using SentenceTransformers.
+Handles vector-based semantic search using SentenceTransformers (primarily for movie data).
 - **Embed Chunks:** `python semantic_search_cli.py embed_chunks`
 - **Search:** `python semantic_search_cli.py search "query"`
 - **Chunked Search:** `python semantic_search_cli.py search_chunked "query"`

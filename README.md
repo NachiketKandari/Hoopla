@@ -26,10 +26,16 @@ Before launching, ensure `GEMINI_API_KEY` is available through `.env`, your envi
 - **Model Configuration:** Switch between Gemini API usage and local Ollama models, with dynamic model discovery when running locally.
 - **README:** Displays the live contents of `README.md` so users can quickly reference features and setup instructions without leaving the app.
 - **Dataset Viewer:** Shows the complete `movies.json` dataset (JSON format) for quick inspection of available metadata.
+- **Admin Panel:** (Admin only) A secured dashboard to manage users, reset quotas, and view conversation history.
 
-## CLI Features
-
-The toolkit encompasses functions for traditional keyword search (BM25), semantic search, multimodal image search, advanced hybrid search via Reciprocal Rank Fusion (RRF), query enhancement, result reranking, and automated performance evaluation.
+### Authentication & Security
+- **User Accounts:** Secure registration and login system.
+- **Rate Limiting:** 50 requests/day limit for standard users (System API). Unlimited for admins and BYO-Key users.
+- **Privacy:** User chats are scoped to their session- **Advanced RAG**:
+  - **Concept Search**: Uses AI-generated descriptions of your code to find relevant functions based on *meaning* rather than just keywords.
+  - **SimpleRAG**: Searches directly against your code content (Code-to-Code search), ideal for finding exact variable names or implementation details.
+  - **HyDE (Hypothetical Document Embeddings)**: Generates a hypothetical Python code snippet based on your query (using project context) and uses it to find similar *real* code.
+  - **Hybrid Search**: Combines semantic search with BM25 keyword search for optimal results.
 
 ## Features
 

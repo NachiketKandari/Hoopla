@@ -113,13 +113,25 @@ def init_database():
 
 
 def create_admin_user():
-    """Create admin user with hardcoded credentials if it doesn't exist."""
+    """Create or update admin user from environment variables."""
     import bcrypt
     
-    admin_username = "admin"
-    admin_password = "f20212691@pilani.best-pilani.ac.in"
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
+    admin_password = os.getenv("ADMIN_PASSWORD")
     
-    # Hash password using bcrypt (same as regular users)
+    if not admin_password:
+        # If no password provided in env, check if admin exists
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM users WHERE username = ?", (admin_username,))
+        existing_admin = cursor.fetchone()
+        conn.close()
+        
+        if not existing_admin:
+            print(f"⚠️ Admin user '{admin_username}' not found and ADMIN_PASSWORD not set. Admin creation skipped.")
+        return
+
+    # Hash password using bcrypt
     salt = bcrypt.gensalt()
     password_hash = bcrypt.hashpw(admin_password.encode('utf-8'), salt).decode('utf-8')
     
@@ -139,15 +151,15 @@ def create_admin_user():
             conn.commit()
             print(f"✅ Admin user '{admin_username}' created successfully")
         except sqlite3.IntegrityError:
-            pass  # Admin already exists
+            pass
     else:
-        # Update existing admin to have correct password and is_admin = 1
+        # Update existing admin to ensure they have admin privileges and correct password
         cursor.execute("""
             UPDATE users SET password_hash = ?, is_admin = 1, requests_left = 999999
             WHERE username = ?
         """, (password_hash, admin_username))
         conn.commit()
-        print(f"✅ Server Started Successfully")
+        print(f"✅ Admin user '{admin_username}' updated successfully")
     
     conn.close()
 
@@ -251,6 +263,24 @@ def get_user_requests_left(user_id: int) -> int:
     return 0
 
 
+def reset_user_requests(user_id: int) -> bool:
+    """Reset user's requests to 50."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        UPDATE users 
+        SET requests_left = 50
+        WHERE id = ?
+    """, (user_id,))
+    
+    success = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    
+    return success
+
+
 def add_chat_history(
     user_id: int,
     query_type: str,
@@ -345,10 +375,12 @@ def get_recent_chat_messages(user_id: int, limit: int = 10) -> List[Dict[str, An
     cursor = conn.cursor()
     
     cursor.execute("""
-        SELECT query, response, timestamp FROM conversation_history 
-        WHERE user_id = ? AND mode = 'chat' AND deleted = 0
-        ORDER BY timestamp ASC 
-        LIMIT ?
+        SELECT * FROM (
+            SELECT query, response, timestamp FROM conversation_history 
+            WHERE user_id = ? AND mode = 'chat' AND deleted = 0
+            ORDER BY timestamp DESC 
+            LIMIT ?
+        ) ORDER BY timestamp ASC
     """, (user_id, limit))
     
     rows = cursor.fetchall()

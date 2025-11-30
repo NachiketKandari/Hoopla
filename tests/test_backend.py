@@ -6,11 +6,12 @@ import sqlite3
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.auth import register_user, authenticate_user
+from app.auth import register_user, authenticate_user, consume_rate_limit, check_rate_limit
 from app.database import (
     get_user_by_username, add_chat_history, get_chat_history, 
-    init_database, get_db_connection
+    init_database, get_db_connection, reset_user_requests, get_user_requests_left
 )
+from cli.lib.codebase_rag import rewrite_query, CodebaseRAG
 
 def setup_clean_db():
     """Reset DB for testing"""
@@ -72,7 +73,75 @@ def test_chat_privacy():
     else:
         print(f"❌ User 2 saw: {[c['query_text'] for c in chats2]}")
 
+def test_admin_reset():
+    print("\nTesting Admin Reset...")
+    username = "test_user_quota"
+    pwd = "password123"
+    
+    register_user(username, pwd)
+    u_id, _ = authenticate_user(username, pwd)
+    
+    # Consume some requests
+    consume_rate_limit(u_id, is_system_api=True)
+    left_before = get_user_requests_left(u_id)
+    if left_before == 49:
+        print("✅ Consumed 1 request")
+    else:
+        print(f"❌ Expected 49 requests left, got {left_before}")
+        
+    # Reset
+    reset_user_requests(u_id)
+    left_after = get_user_requests_left(u_id)
+    if left_after == 50:
+        print("✅ Quota reset successfully")
+    else:
+        print(f"❌ Expected 50 requests left, got {left_after}")
+
+def test_rag_rewrite():
+    print("\nTesting RAG Rewrite...")
+    query = "test query"
+    rewritten = rewrite_query(query, api_key=None)
+    
+    print(f"Original: {query}")
+    print(f"Rewritten: {rewritten}")
+    
+    if rewritten and isinstance(rewritten, str):
+        print("✅ Rewrite returned a string")
+    else:
+        print(f"❌ Rewrite failed to return string: {rewritten}")
+
+def test_search_modes():
+    print("\nTesting Search Modes...")
+    rag = CodebaseRAG()
+    # Mock embeddings to avoid full load if possible, or just test logic
+    # For now, we'll just check if the method accepts the modes without crashing
+    
+    modes = ["concept", "simple", "hyde"]
+    query = "database connection"
+    
+    for mode in modes:
+        try:
+            # We don't expect actual results without a full index, but we check for crashes
+            # Note: This might print warnings about missing embeddings, which is expected
+            rag.search(query, limit=1, mode=mode)
+            print(f"✅ Search mode '{mode}' executed without error")
+        except Exception as e:
+            print(f"❌ Search mode '{mode}' failed: {e}")
+
+def test_registration_validation():
+    print("\nTesting Registration Validation...")
+    # Test short password
+    success, msg, uid = register_user("valid_user", "short")
+    if not success and uid is None:
+        print("✅ Short password validation passed (returns 3 values)")
+    else:
+        print(f"❌ Short password validation failed signature check: {success}, {msg}, {uid}")
+
 if __name__ == "__main__":
     setup_clean_db()
     test_unique_usernames()
+    test_registration_validation()
     test_chat_privacy()
+    test_admin_reset()
+    test_rag_rewrite()
+    test_search_modes()

@@ -366,8 +366,8 @@ if user_id and 'chat_loaded' not in st.session_state:
     try:
         db_messages = get_recent_chat_messages(user_id, limit=20)
         for msg in db_messages:
-            st.session_state.chat_messages.append({"role": "user", "content": msg['query']})
-            st.session_state.chat_messages.append({"role": "assistant", "content": msg['response'], "results": []})
+            st.session_state.chat_messages.append({"role": "user", "content": msg['query'], "is_history": True})
+            st.session_state.chat_messages.append({"role": "assistant", "content": msg['response'], "results": [], "is_history": True})
         st.session_state.chat_loaded = True
     except Exception as e:
         logger.error(f"Failed to load chat history: {e}")
@@ -410,15 +410,38 @@ with tab1:
     st.caption("🔍 Search Mode")
     search_mode_display = st.radio(
         "Search Mode",
-        ["HyDE (Concept Search)", "Code (Exact Search)"],
+        ["Concept Search", "SimpleRAG", "HyDE"],
         horizontal=True,
         label_visibility="collapsed",
-        help="HyDE matches concepts/descriptions. Code matches variable names and structure."
+        help="Concept: Matches meaning/descriptions. SimpleRAG: Matches exact code content. HyDE: Generates fake code to find real code."
     )
-    search_mode = "hyde" if "HyDE" in search_mode_display else "code"
+    
+    if "Concept" in search_mode_display:
+        search_mode = "concept"
+    elif "SimpleRAG" in search_mode_display:
+        search_mode = "simple"
+    else:
+        search_mode = "hyde"
     
     # Display chat messages
-    for message in st.session_state.chat_messages:
+    # Separate history and new messages
+    history_msgs = [m for m in st.session_state.chat_messages if m.get("is_history")]
+    new_msgs = [m for m in st.session_state.chat_messages if not m.get("is_history")]
+    
+    # Display history in expander
+    if history_msgs:
+        with st.expander("📜 Previous Conversations", expanded=False):
+            for message in history_msgs:
+                with st.chat_message(message["role"]):
+                    st.write(message["content"])
+                    if "results" in message and message["results"]:
+                        with st.expander("📄 Relevant Code Chunks"):
+                            for i, res in enumerate(message["results"], 1):
+                                st.markdown(f"**{i}. {res['filename']}:{res['name']}** (Score: {res['score']:.4f})")
+                                st.code(res['content'], language='python')
+
+    # Display new messages
+    for message in new_msgs:
         with st.chat_message(message["role"]):
             st.write(message["content"])
             if "results" in message and message["results"]:
@@ -458,21 +481,42 @@ with tab1:
                             chat_context += "\n"
                         
                         # Codebase RAG Logic
-                        rag = CodebaseRAG()
-                        
-                        # Rewrite query for better search
                         api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
-                        search_query = rewrite_query(prompt, api_key)
-                        if search_query != prompt:
+                        rag = CodebaseRAG(api_key=api_key)
+                        
+                        search_query = prompt
+                        search_mode_arg = "simple" # Default argument for rag.search
+                        
+                        if search_mode == "hyde":
+                            # HyDE: Generate hypothetical code -> Search Code Embeddings (Simple)
+                            with st.spinner("Generating hypothetical code..."):
+                                search_query = rag.generate_hypothetical_code(prompt)
+                                search_mode_arg = "hyde" # We search the generated code against code embeddings
+                                
                             with st.expander("🔍 Search Details"):
-                                st.caption(f"Rewritten Query: {search_query}")
+                                st.caption("Hypothetical Code Generated:")
+                                st.code(search_query, language='python')
+                                
+                        elif search_mode == "concept":
+                            # Concept: Rewrite query -> Search Description Embeddings
+                            search_query = rewrite_query(prompt, api_key)
+                            search_mode_arg = "concept"
+                            
+                            if search_query != prompt:
+                                with st.expander("🔍 Search Details"):
+                                    st.caption(f"Rewritten Query: {search_query}")
+                                    
+                        else:
+                            # Simple: Raw query -> Search Code Embeddings
+                            search_query = prompt
+                            search_mode_arg = "simple"
                         
                         results = rag.search(
                             search_query,
                             limit=10,
                             score_threshold=0.01,  # RRF score threshold
                             use_reranking=st.session_state.thinking_mode,
-                            mode=search_mode
+                            mode=search_mode_arg
                         )
                         
                         # Format results for prompt
@@ -638,12 +682,12 @@ with tab3:
     
     with col1:
         if search_type == "rrf-search":
-            k_value = st.number_input("K Value", min_value=1.0, max_value=100.0, value=DEFAULT_K_VALUE, step=1.0)
+            k_value = st.number_input("K Value", min_value=1.0, max_value=100.0, value=DEFAULT_K_VALUE, step=1.0, help="Constant for RRF fusion. Lower values give more weight to high rankings.")
         else:
-            alpha_value = st.number_input("Alpha Value", min_value=0.0, max_value=1.0, value=DEFAULT_ALPHA_VALUE, step=0.1)
+            alpha_value = st.number_input("Alpha Value", min_value=0.0, max_value=1.0, value=DEFAULT_ALPHA_VALUE, step=0.1, help="Weight for semantic search (0.0 to 1.0). Higher values favor semantic results over keyword results.")
     
     with col2:
-        limit = st.number_input("Limit", min_value=1, max_value=50, value=DEFAULT_SEARCH_LIMIT, step=1)
+        limit = st.number_input("Limit", min_value=1, max_value=50, value=DEFAULT_SEARCH_LIMIT, step=1, help="Maximum number of results to return.")
     
     enhance = None
     rerank = None

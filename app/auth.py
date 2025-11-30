@@ -31,13 +31,13 @@ def register_user(username: str, password: str) -> Tuple[bool, str, Optional[int
     Returns (success, message, user_id)
     """
     if not username or not password:
-        return False, "Username and password are required"
+        return False, "Username and password are required", None
     
     if len(username) < 3:
-        return False, "Username must be at least 3 characters"
+        return False, "Username must be at least 3 characters", None
     
     if len(password) < 6:
-        return False, "Password must be at least 6 characters"
+        return False, "Password must be at least 6 characters", None
     
     password_hash = hash_password(password)
     success = create_user(username, password_hash)
