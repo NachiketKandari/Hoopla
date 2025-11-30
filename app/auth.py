@@ -25,10 +25,10 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def register_user(username: str, password: str) -> Tuple[bool, str]:
+def register_user(username: str, password: str) -> Tuple[bool, str, Optional[int]]:
     """
     Register a new user.
-    Returns (success, message)
+    Returns (success, message, user_id)
     """
     if not username or not password:
         return False, "Username and password are required"
@@ -43,9 +43,10 @@ def register_user(username: str, password: str) -> Tuple[bool, str]:
     success = create_user(username, password_hash)
     
     if success:
-        return True, "Registration successful! Please login."
+        user = get_user_by_username(username)
+        return True, "Registration successful! Logging you in...", user['id']
     else:
-        return False, "Username already exists"
+        return False, "Username already exists", None
 
 
 def authenticate_user(username: str, password: str) -> Tuple[Optional[int], str]:
@@ -121,11 +122,11 @@ def login_user(user_id: int):
 
 
 def logout_user():
-    """Logout the current user."""
-    if 'user_id' in st.session_state:
-        del st.session_state.user_id
-    if 'username' in st.session_state:
-        del st.session_state.username
+    """Logout the current user and clear session state."""
+    keys_to_clear = ['user_id', 'username', 'chat_messages', 'chat_loaded', 'thinking_mode']
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
 
 
 def is_admin() -> bool:

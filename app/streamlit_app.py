@@ -327,11 +327,12 @@ if not is_user_logged_in():
             
             if submit:
                 log_event("register_attempt", attempt_username=username)
-                success, message = register_user(username, password)
+                success, message, user_id = register_user(username, password)
                 if success:
                     log_event("register_success", username=username)
+                    login_user(user_id)
                     st.success(message)
-                    st.session_state.show_login = True
+                    st.session_state.show_login = False
                     st.session_state.show_register = False
                     st.rerun()
                 else:
