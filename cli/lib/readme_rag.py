@@ -2,11 +2,10 @@ import os
 import pickle
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from google import genai
 from collections import defaultdict, Counter
 import math
 import re
-from cli.lib.search_utils import CACHE_DIR, PROJECT_ROOT
+from cli.lib.search_utils import CACHE_DIR, PROJECT_ROOT, generate_text
 
 # Configuration
 README_FILES = [
@@ -18,6 +17,26 @@ README_FILES = [
 INDEX_FILE = os.path.join(CACHE_DIR, "readmes.pkl")
 CHUNK_SIZE = 500  # Characters
 OVERLAP = 50
+
+
+def _create_client(api_key=None):
+    """Create an LLM client based on LLM_PROVIDER env var."""
+    provider = os.environ.get("LLM_PROVIDER", "deepseek").lower()
+
+    if provider == "gemini":
+        from google import genai
+        key = api_key or os.environ.get("GEMINI_API_KEY")
+        if not key:
+            return None, None, None
+        return genai.Client(api_key=key), "gemini-2.0-flash", "gemini"
+    else:
+        from openai import OpenAI
+        key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+        if not key:
+            return None, None, None
+        client = OpenAI(api_key=key, base_url="https://api.deepseek.com/v1")
+        return client, "deepseek-v4-flash", "deepseek"
+
 
 class ReadmeRAG:
     def __init__(self):
@@ -44,7 +63,6 @@ class ReadmeRAG:
 
     def chunk_text(self, text, source):
         chunks = []
-        # Simple sliding window chunking
         for i in range(0, len(text), CHUNK_SIZE - OVERLAP):
             chunk_content = text[i:i + CHUNK_SIZE]
             chunks.append({
@@ -61,32 +79,29 @@ class ReadmeRAG:
         for doc in docs:
             self.chunks.extend(self.chunk_text(doc['content'], doc['path']))
 
-        # Semantic Embeddings
         print("Generating embeddings...")
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         texts = [c['content'] for c in self.chunks]
         self.embeddings = self.model.encode(texts, show_progress_bar=True)
 
-        # BM25 Indexing
         print("Building BM25 index...")
         total_len = 0
         doc_count = len(self.chunks)
-        
+
         for chunk in self.chunks:
             tokens = self.tokenize(chunk['content'])
             length = len(tokens)
             self.doc_lengths[chunk['id']] = length
             total_len += length
-            
+
             counts = Counter(tokens)
             self.term_freqs.append(counts)
-            
+
             for term in counts:
                 self.bm25_index[term].add(chunk['id'])
 
         self.avg_doc_len = total_len / doc_count if doc_count > 0 else 0
-        
-        # Calculate IDF
+
         for term, doc_ids in self.bm25_index.items():
             df = len(doc_ids)
             self.idf[term] = math.log((doc_count - df + 0.5) / (df + 0.5) + 1)
@@ -124,36 +139,35 @@ class ReadmeRAG:
             self.avg_doc_len = data['avg_doc_len']
             self.term_freqs = data['term_freqs']
             self.idf = data['idf']
-        
+
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
 
     def bm25_score(self, query, k1=1.5, b=0.75):
         tokens = self.tokenize(query)
         scores = defaultdict(float)
-        
+
         for term in tokens:
             if term not in self.idf:
                 continue
             idf_val = self.idf[term]
-            
+
             for doc_id in self.bm25_index[term]:
                 tf = self.term_freqs[doc_id][term]
                 doc_len = self.doc_lengths[doc_id]
-                
+
                 num = tf * (k1 + 1)
                 den = tf + k1 * (1 - b + b * (doc_len / self.avg_doc_len))
                 scores[doc_id] += idf_val * (num / den)
-        
+
         return scores
 
     def semantic_search(self, query):
         if self.model is None:
-             self.model = SentenceTransformer('all-MiniLM-L6-v2')
-             
+            self.model = SentenceTransformer('all-MiniLM-L6-v2')
+
         query_vec = self.model.encode([query])[0]
         scores = {}
-        
-        # Cosine similarity
+
         norm_q = np.linalg.norm(query_vec)
         for i, doc_vec in enumerate(self.embeddings):
             norm_d = np.linalg.norm(doc_vec)
@@ -162,61 +176,54 @@ class ReadmeRAG:
             else:
                 score = np.dot(query_vec, doc_vec) / (norm_q * norm_d)
             scores[self.chunks[i]['id']] = score
-            
+
         return scores
 
     def rrf_search(self, query, k=60, limit=5):
         if not self.chunks:
             self.load_index()
-            
+
         bm25_scores = self.bm25_score(query)
         sem_scores = self.semantic_search(query)
-        
-        # Rank
+
         bm25_ranked = sorted(bm25_scores.keys(), key=lambda x: bm25_scores[x], reverse=True)
         sem_ranked = sorted(sem_scores.keys(), key=lambda x: sem_scores[x], reverse=True)
-        
+
         rrf_scores = defaultdict(float)
-        
+
         for rank, doc_id in enumerate(bm25_ranked):
             rrf_scores[doc_id] += 1 / (k + rank + 1)
-            
+
         for rank, doc_id in enumerate(sem_ranked):
             rrf_scores[doc_id] += 1 / (k + rank + 1)
-            
+
         top_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)[:limit]
         return [self.chunks[i] for i in top_ids]
 
     def rewrite_query(self, query, context_chunks, api_key=None):
-        if not api_key:
-            api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            print("GEMINI_API_KEY not found.")
+        client, model, provider = _create_client(api_key)
+        if not client:
+            provider_name = os.environ.get("LLM_PROVIDER", "deepseek").upper()
+            print(f"{provider_name}_API_KEY not found.")
             return query
 
-        client = genai.Client(api_key=api_key)
-        
         context_text = "\n\n".join([f"Source: {c['source']}\nContent: {c['content']}" for c in context_chunks])
-        
+
         prompt = f"""
         You are a helpful assistant for the Hoopla RAG Toolkit.
         Based on the following context from the project documentation, rewrite the user's query to be more specific and technical, suitable for a RAG system search.
         The rewritten query should be a single sentence and should be a direct translation of the user's query into a query that can be used to search the project documentation.
-        
+
         Context:
         {context_text}
-        
+
         User Query: {query}
-        
+
         Rewritten Query:
         """
-        
+
         try:
-            response = client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt
-            )
-            return response.text.strip()
+            return generate_text(prompt, client, model, provider)
         except Exception as e:
             print(f"Error rewriting query: {e}")
             return query

@@ -1,13 +1,13 @@
 from collections import defaultdict
 from typing import Optional
 
-from google import genai
+from .search_utils import get_llm_client, generate_text
 
-from .search_utils import get_gemini_api_key
+_client, _model, _provider = get_llm_client()
 
-api_key = get_gemini_api_key()
-client = genai.Client(api_key=api_key)
-model = "gemini-2.0-flash"
+
+def _generate(prompt: str) -> str:
+    return generate_text(prompt, _client, _model, _provider)
 
 
 def spell_correct(query: str) -> str:
@@ -20,8 +20,7 @@ Query: "{query}"
 If no errors, return the original query.
 Corrected:"""
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    corrected = (response.text or "").strip().strip('"')
+    corrected = (_generate(prompt) or "").strip().strip('"')
     return corrected if corrected else query
 
 
@@ -45,8 +44,7 @@ Examples:
 
 Rewritten query:"""
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    rewritten = (response.text or "").strip().strip('"')
+    rewritten = (_generate(prompt) or "").strip().strip('"')
     return rewritten if rewritten else query
 
 
@@ -55,7 +53,7 @@ def expand_query(query: str) -> str:
 
 Add synonyms and related concepts that might appear in movie descriptions.
 Keep expansions relevant and focused.
-This will be appended to the original query. 
+This will be appended to the original query.
 ONLY return the expanded query text without any markdowns.
 
 Examples:
@@ -67,10 +65,10 @@ Examples:
 Query: "{query}"
 """
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    expanded_terms = (response.text or "").strip().strip('"')
+    expanded_terms = (_generate(prompt) or "").strip().strip('"')
 
     return f"{query} {expanded_terms}"
+
 
 def enhance_query(query: str, method: Optional[str] = None) -> str:
     match method:

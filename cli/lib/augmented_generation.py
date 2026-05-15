@@ -1,20 +1,22 @@
 import os
 from dotenv import load_dotenv
-from google import genai
 import logging
 
 from .hybrid_search import HybridSearch
-from .search_utils import DEFAULT_SEARCH_LIMIT, load_movies
+from .search_utils import DEFAULT_SEARCH_LIMIT, load_movies, get_llm_client, generate_text
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-api_key = os.getenv("gemini_api_key")
-client = genai.Client(api_key=api_key)
-model = "gemini-2.0-flash"
+_client, _model, _provider = get_llm_client()
+
+
+def _generate(prompt: str) -> str:
+    return generate_text(prompt, _client, _model, _provider)
+
 
 def generate_response(query: str, results: list[dict]) -> str:
-    
+
     prompt = f"""Answer the question or provide information based on the provided documents. This should be tailored to Hoopla users. Hoopla is a movie streaming service. Respond without any bolding, italics, or other markdown. Just the text in points if neccessary.
 
     Query: {query}
@@ -22,10 +24,10 @@ def generate_response(query: str, results: list[dict]) -> str:
     Documents:
     {results}
 
-    Provide a comprehensive answer that addresses the query:""" 
+    Provide a comprehensive answer that addresses the query:"""
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
+    return _generate(prompt)
+
 
 def generate_multidoc_summary(query: str, results: list[dict]) -> str:
     prompt = f"""
@@ -40,8 +42,8 @@ def generate_multidoc_summary(query: str, results: list[dict]) -> str:
     Provide a comprehensive 3-4 sentence answer that combines information from multiple sources:
     """
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
+    return _generate(prompt)
+
 
 def generate_citations(query: str, results: list[dict]) -> str:
     prompt = prompt = f"""Answer the question or provide information based on the provided documents.
@@ -66,8 +68,8 @@ def generate_citations(query: str, results: list[dict]) -> str:
 
     Answer:"""
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
+    return _generate(prompt)
+
 
 def generate_answer(query: str, results: list[dict]) -> str:
     prompt = f"""Answer the following question based on the provided documents.
@@ -90,8 +92,8 @@ def generate_answer(query: str, results: list[dict]) -> str:
 
     Answer:"""
 
-    response = client.models.generate_content(model=model, contents=prompt)
-    return response.text
+    return _generate(prompt)
+
 
 def get_results(query: str) -> list[dict]:
     documents = load_movies()
@@ -100,6 +102,7 @@ def get_results(query: str) -> list[dict]:
     results = hybrid_search.rrf_search(query, limit=DEFAULT_SEARCH_LIMIT)
     return results
 
+
 def rag_command(query: str) -> None:
     results = get_results(query)
     response = generate_response(query, results)
@@ -107,8 +110,9 @@ def rag_command(query: str) -> None:
     print("Search Results: ")
     for res in results:
         print(f"\n\t-{res['title']}")
-    
+
     print(f"\n\nRAG Response:\n{response}")
+
 
 def summarize_command(query: str) -> None:
     results = get_results(query)
@@ -117,8 +121,9 @@ def summarize_command(query: str) -> None:
     print("Search Results: ")
     for res in results:
         print(f"\n\t-{res['title']}")
-    
+
     print(f"\n\nLLM Summary:\n{response}")
+
 
 def citations_command(query: str) -> None:
     results = get_results(query)
@@ -127,8 +132,9 @@ def citations_command(query: str) -> None:
     print("Search Results: ")
     for res in results:
         print(f"\n\t-{res['title']}")
-    
+
     print(f"\n\nLLM Answer:\n{response}")
+
 
 def question_command(query: str) -> None:
     results = get_results(query)
@@ -137,5 +143,5 @@ def question_command(query: str) -> None:
     print("Search Results: ")
     for res in results:
         print(f"\n\t-{res['title']}")
-    
+
     print(f"\n\nAnswer:\n{response}")

@@ -3,16 +3,19 @@ import requests
 import json
 from dotenv import load_dotenv
 from google import genai
+from openai import OpenAI
 
 load_dotenv()
 
 class InvalidAPIKeyError(Exception):
-    """Raised when the Gemini API key is invalid."""
+    """Raised when an API key is invalid."""
     pass
+
+# ── Gemini ─────────────────────────────────────────────────
 
 def get_gemini_client(api_key: str = None):
     if not api_key:
-        api_key = os.getenv("gemini_api_key") or os.getenv("GEMINI_API_KEY")
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key")
     if not api_key:
         raise ValueError("Gemini API key not found in environment variables or provided as argument")
     client = genai.Client(api_key=api_key)
@@ -30,6 +33,32 @@ def generate_with_gemini(prompt: str, api_key: str = None) -> str:
             raise InvalidAPIKeyError(f"Invalid Gemini API Key or permissions error: {error_msg}")
         raise e
 
+# ── DeepSeek ───────────────────────────────────────────────
+
+def get_deepseek_client(api_key: str = None):
+    if not api_key:
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise ValueError("DeepSeek API key not found in environment variables or provided as argument")
+    client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+    return client
+
+def generate_with_deepseek(prompt: str, api_key: str = None) -> str:
+    try:
+        client = get_deepseek_client(api_key)
+        response = client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content or ""
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg or "403" in error_msg or "AuthenticationError" in error_msg:
+            raise InvalidAPIKeyError(f"Invalid DeepSeek API Key or permissions error: {error_msg}")
+        raise e
+
+# ── Ollama ─────────────────────────────────────────────────
+
 def generate_with_ollama(prompt: str, model_name: str) -> str:
     url = "http://localhost:11434/api/generate"
     payload = {
@@ -43,6 +72,18 @@ def generate_with_ollama(prompt: str, model_name: str) -> str:
     result = response.json()
     return result.get("response", "")
 
+# ── Unified generation (routes by provider) ────────────────
+
+def generate_with_provider(prompt: str, provider: str = "deepseek", api_key: str = None, ollama_model: str = None) -> str:
+    """Route generation to the selected provider. provider: 'gemini', 'deepseek', or 'local'."""
+    if provider == "local" and ollama_model:
+        return generate_with_ollama(prompt, ollama_model)
+    elif provider in ("gemini", "custom_gemini"):
+        return generate_with_gemini(prompt, api_key)
+    else:
+        # deepseek, custom_deepseek, API, or anything else defaults to deepseek
+        return generate_with_deepseek(prompt, api_key)
+
 def generate_response(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None, api_key: str = None) -> str:
     prompt = f"""Answer the question or provide information based on the provided documents. This should be tailored to Hoopla users. Hoopla is a movie streaming service. Respond without any bolding, italics, or other markdown. Just the text in points if neccessary.
 
@@ -52,11 +93,11 @@ def generate_response(query: str, results: list[dict], model_type: str = "API", 
     {results}
 
     Provide a comprehensive answer that addresses the query:"""
-    
+
     if model_type == "local" and ollama_model:
         return generate_with_ollama(prompt, ollama_model)
     else:
-        return generate_with_gemini(prompt, api_key)
+        return generate_with_provider(prompt, provider=model_type, api_key=api_key)
 
 def generate_multidoc_summary(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None, api_key: str = None) -> str:
     prompt = f"""
@@ -70,11 +111,11 @@ def generate_multidoc_summary(query: str, results: list[dict], model_type: str =
     {results}
     Provide a comprehensive 3-4 sentence answer that combines information from multiple sources:
     """
-    
+
     if model_type == "local" and ollama_model:
         return generate_with_ollama(prompt, ollama_model)
     else:
-        return generate_with_gemini(prompt, api_key)
+        return generate_with_provider(prompt, provider=model_type, api_key=api_key)
 
 def generate_citations(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None, api_key: str = None) -> str:
     prompt = f"""Answer the question or provide information based on the provided documents.
@@ -98,11 +139,11 @@ def generate_citations(query: str, results: list[dict], model_type: str = "API",
 
 
     Answer:"""
-    
+
     if model_type == "local" and ollama_model:
         return generate_with_ollama(prompt, ollama_model)
     else:
-        return generate_with_gemini(prompt, api_key)
+        return generate_with_provider(prompt, provider=model_type, api_key=api_key)
 
 def generate_answer(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None, api_key: str = None) -> str:
     prompt = f"""Answer the following question based on the provided documents. Answer in a SFW manner only.
@@ -124,9 +165,8 @@ def generate_answer(query: str, results: list[dict], model_type: str = "API", ol
     - Opinion-based questions: Acknowledge subjectivity and provide a balanced view
 
     Answer:"""
-    
+
     if model_type == "local" and ollama_model:
         return generate_with_ollama(prompt, ollama_model)
     else:
-        return generate_with_gemini(prompt, api_key)
-
+        return generate_with_provider(prompt, provider=model_type, api_key=api_key)
