@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>🔐 Admin Panel</h1>
+
+<div class="admin-stats">
+    <div class="stat-card">
+        <strong>{{ stats.total_users }}</strong>
+        <span>Users</span>
+    </div>
+    <div class="stat-card">
+        <strong>{{ stats.total_conversations }}</strong>
+        <span>Conversations</span>
+    </div>
+    <div class="stat-card">
+        <strong>{{ stats.deleted_conversations }}</strong>
+        <span>Deleted</span>
+    </div>
+</div>
+
+{% if stats.conversations_by_mode %}
+<div class="admin-modes">
+    <h3>By Mode</h3>
+    {% for mode, count in stats.conversations_by_mode.items() %}
+    <span class="badge">{{ mode }}: {{ count }}</span>
+    {% endfor %}
+</div>
+{% endif %}
+
+<h2>Users</h2>
+<table class="data-table">
+    <thead>
+        <tr><th>ID</th><th>Username</th><th>Requests Left</th><th>Admin</th><th>Created</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for u in users %}
+        <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.username }}{% if u.is_admin %} 👑{% endif %}</td>
+            <td>{{ u.requests_left }}</td>
+            <td>{{ 'Yes' if u.is_admin else 'No' }}</td>
+            <td>{{ u.created_at }}</td>
+            <td>
+                <button class="btn-small"
+                    hx-post="/admin/reset-quota"
+                    hx-vals='{"user_id": {{ u.id }}}'
+                    hx-swap="outerHTML">Reset Quota</button>
+                <button class="btn-small"
+                    hx-get="/admin/conversations/{{ u.id }}"
+                    hx-target="#conv-view-{{ u.id }}"
+                    hx-swap="innerHTML">View</button>
+            </td>
+        </tr>
+        <tr id="conv-view-{{ u.id }}" style="display:none"></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

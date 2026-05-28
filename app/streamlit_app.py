@@ -25,6 +25,7 @@ from app.database import (
     add_chat_history, image_file_to_base64, add_conversation, get_recent_chat_messages, 
     mark_conversations_as_deleted, get_all_users, get_user_conversations, get_db_stats
 )
+from app.admin_chat_ui import render_admin_chat
 import requests
 
 st.set_page_config(page_title="Hoopla", page_icon="🎬", layout="wide")
@@ -373,12 +374,13 @@ if user_id and 'chat_loaded' not in st.session_state:
         logger.error(f"Failed to load chat history: {e}")
         st.session_state.chat_loaded = True  # Set anyway to prevent repeated attempts
 
-# Create tabs - include admin panel only for admin users
+# Create tabs - include admin buttons only for admin users
 if is_admin():
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Chat", "RAG", "Hybrid Search", "Semantic Search", "Keyword Search", "Multimodal Search", "🔐 Admin Panel"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Chat", "RAG", "Hybrid Search", "Semantic Search", "Keyword Search", "Multimodal Search", "🔐 Admin Panel", "🤖 Admin Chatbot"])
 else:
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Chat", "RAG", "Hybrid Search", "Semantic Search", "Keyword Search", "Multimodal Search"])
-    tab7 = None  # Placeholder
+    tab7 = None
+    tab8 = None
 
 # Chat Tab
 with tab1:
@@ -1198,3 +1200,8 @@ if tab7 is not None and is_admin():
                     st.info("No conversations found for this user")
         else:
             st.warning("No users available")
+
+# Admin Chatbot Tab
+if is_admin() and tab8:
+    with tab8:
+        render_admin_chat()

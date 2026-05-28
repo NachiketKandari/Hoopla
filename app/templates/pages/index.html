@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>💬 Chat with Hoopla</h1>
+<p class="caption">Ask questions about the Hoopla codebase.</p>
+
+<div class="chat-controls">
+    <div class="control-row">
+        <span>Mode:</span>
+        <select id="search-mode" name="mode">
+            <option value="concept">Concept Search</option>
+            <option value="simple">SimpleRAG</option>
+            <option value="hyde">HyDE</option>
+        </select>
+        <label class="checkbox-label">
+            <input type="checkbox" id="thinking-mode" name="thinking_mode" value="true">
+            🧠 Thinking Mode
+        </label>
+    </div>
+    <div class="control-row">
+        <button class="btn-secondary" hx-post="/chat/clear" hx-target="#chat-history" hx-swap="innerHTML">
+            🗑️ Clear Chat
+        </button>
+    </div>
+</div>
+
+<div id="chat-container">
+    <div id="chat-history"></div>
+    <div id="chat-messages"></div>
+</div>
+
+<form id="chat-form" hx-post="/chat/send" hx-target="#chat-messages" hx-swap="beforeend" hx-on::after-request="setTimeout(function(){this.reset();},100)">
+    <input type="hidden" name="mode" id="mode-input" value="concept">
+    <input type="hidden" name="thinking_mode" id="thinking-input" value="false">
+    <textarea name="query" placeholder="Ask me about the codebase..." rows="2" required
+        hx-on:keydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();htmx.trigger('#chat-form','submit');}"></textarea>
+    <button type="submit" class="btn-primary">Send</button>
+</form>
+
+<script>
+    document.getElementById('search-mode').addEventListener('change', function() {
+        document.getElementById('mode-input').value = this.value;
+    });
+    document.getElementById('thinking-mode').addEventListener('change', function() {
+        document.getElementById('thinking-input').value = this.checked ? 'true' : 'false';
+    });
+    // Load history on page load
+    htmx.ajax('GET', '/chat/history', {target:'#chat-history', swap:'innerHTML'});
+    document.getElementById('chat-messages').addEventListener('htmx:afterSwap', function() {
+        this.scrollIntoView({behavior:'smooth',block:'end'});
+    });
+</script>
+{% endblock %}

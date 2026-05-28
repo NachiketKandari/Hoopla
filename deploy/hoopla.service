@@ -1,0 +1,16 @@
+[Unit]
+Description=Hoopla FastAPI App
+After=network.target
+
+[Service]
+Type=simple
+User=hoopla
+Group=hoopla
+WorkingDirectory=/home/hoopla/hoopla
+Environment="PATH=/home/hoopla/hoopla/.venv/bin"
+ExecStart=/home/hoopla/hoopla/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

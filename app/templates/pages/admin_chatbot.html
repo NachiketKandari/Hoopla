@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>🤖 Admin Chatbot</h1>
+<p class="caption">Private admin chatbot with memory RAG.</p>
+
+<div class="session-controls">
+    <form hx-post="/admin/chatbot/session" hx-target="#session-select" hx-swap="outerHTML">
+        <input type="text" name="name" placeholder="Session name" required>
+        <select name="model">
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+        </select>
+        <button type="submit" class="btn-primary">New Session</button>
+    </form>
+</div>
+
+<div class="session-list">
+    <h3>Sessions</h3>
+    <select id="session-select" onchange="loadSession(this.value)">
+        <option value="">-- Select a session --</option>
+        {% for s in sessions %}
+        <option value="{{ s.id }}">{{ s.name }} ({{ s.model }})</option>
+        {% endfor %}
+    </select>
+    <form hx-post="/admin/chatbot/delete-session" hx-confirm="Delete this session?" style="display:inline;">
+        <input type="hidden" name="session_id" id="delete-session-id">
+        <button type="submit" class="btn-danger btn-small" onclick="document.getElementById('delete-session-id').value=document.getElementById('session-select').value">Delete</button>
+    </form>
+</div>
+
+<div id="chatbot-messages"></div>
+
+<form hx-post="/admin/chatbot/send" hx-target="#chatbot-messages" hx-swap="beforeend" hx-on::after-request="this.reset()">
+    <input type="hidden" name="session_id" id="active-session-id">
+    <textarea name="query" placeholder="Ask the admin chatbot..." rows="2" required></textarea>
+    <button type="submit" class="btn-primary">Send</button>
+</form>
+
+<script>
+    function loadSession(id) {
+        document.getElementById('active-session-id').value = id;
+        document.getElementById('delete-session-id').value = id;
+        if (!id) { document.getElementById('chatbot-messages').innerHTML = ''; return; }
+        fetch('/admin/chatbot/messages/' + id)
+            .then(r => r.text())
+            .then(html => { document.getElementById('chatbot-messages').innerHTML = html; });
+    }
+</script>
+{% endblock %}

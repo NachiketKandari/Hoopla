@@ -4,7 +4,7 @@ import json
 from typing import Optional
 from dotenv import load_dotenv
 from google import genai
-from sentence_transformers import CrossEncoder
+from .model_loader import get_cross_encoder_tinybert
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ api_key = os.getenv("gemini_api_key")
 client = genai.Client(api_key=api_key)
 model = "gemini-2.0-flash"
 
-cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2")
+cross_encoder = get_cross_encoder_tinybert()
 
 def rerank_individual(query: str, results: list[dict],limit: int) -> None:
     for doc in results:
@@ -87,13 +87,14 @@ def rerank_cross_encoder(query: str, results: list[dict],limit: int) -> None:
 
     docs = []
     for score, result in sorted_scored_results[:limit]:
-        result['cross-encoder-score'] = score
+        result['cross-encoder-score'] = float(score)
+        result['score'] = float(score)
         docs.append(result)
     
-    # logging.info(f"Cross-encoder Reranking Results: {docs}")
-
     for i, res in enumerate(docs, 1):
         print(f"{i}.\t{res['title']} \n\tCross Encoder Score: {res['cross-encoder-score']}\n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
+    
+    return docs
 
 def format_results(results: list[dict]) -> str:
     formatted: str = ''

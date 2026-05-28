@@ -1,0 +1,6 @@
+<form hx-post="/auth/register" hx-target="#auth-forms" hx-swap="outerHTML" class="auth-form">
+    <input type="text" name="username" placeholder="Username" required minlength="3">
+    <input type="password" name="password" placeholder="Password" required minlength="6">
+    {% if error %}<p class="error-message">{{ error }}</p>{% endif %}
+    <button type="submit" class="btn-primary">Register</button>
+</form>

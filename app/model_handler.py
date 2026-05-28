@@ -18,12 +18,24 @@ def get_gemini_client(api_key: str = None):
     client = genai.Client(api_key=api_key)
     return client
 
-def generate_with_gemini(prompt: str, api_key: str = None) -> str:
+def generate_with_gemini(prompt: str, api_key: str = None, model_name: str = "gemini-2.0-flash", return_usage: bool = False):
     try:
         client = get_gemini_client(api_key)
-        model = "gemini-2.0-flash"
-        response = client.models.generate_content(model=model, contents=prompt)
-        return response.text or ""
+        response = client.models.generate_content(model=model_name, contents=prompt)
+        
+        text = response.text or ""
+        
+        if return_usage:
+            usage = {}
+            if response.usage_metadata:
+                usage = {
+                    "prompt_token_count": response.usage_metadata.prompt_token_count,
+                    "candidates_token_count": response.usage_metadata.candidates_token_count,
+                    "total_token_count": response.usage_metadata.total_token_count
+                }
+            return text, usage
+            
+        return text
     except Exception as e:
         error_msg = str(e)
         if "400" in error_msg or "API key" in error_msg or "403" in error_msg:

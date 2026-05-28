@@ -1,16 +1,16 @@
 from PIL import Image
 import os
-from sentence_transformers import SentenceTransformer
 from .semantic_search import cosine_similarity
 from .search_utils import PROJECT_ROOT, CACHE_DIR, load_movies
+from .model_loader import get_clip_model
 import heapq
 import numpy as np
 
 class MultiModalSearch:
-    def __init__(self,documents,  model_name="clip-ViT-B-32"):
-        self.model = SentenceTransformer(model_name)
-        self.documents = documents
-        self.texts = [f"{doc['title']}: {doc['description']}" for doc in documents]
+    def __init__(self, documents=None, model_name="clip-ViT-B-32"):
+        self.model = get_clip_model()
+        self.documents = documents or []
+        self.texts = [f"{doc['title']}: {doc['description']}" for doc in self.documents]
         self.clip_embeddings_path = os.path.join(CACHE_DIR, "clip_embeddings.npy")
         self.text_embeddings = None
 

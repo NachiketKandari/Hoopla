@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>🔍 Search</h1>
+<p class="caption">Hybrid, Semantic, Keyword, and Multimodal search.</p>
+
+<div class="search-tabs">
+    <button class="search-tab active" onclick="showSearchTab('hybrid')">Hybrid</button>
+    <button class="search-tab" onclick="showSearchTab('semantic')">Semantic</button>
+    <button class="search-tab" onclick="showSearchTab('keyword')">Keyword</button>
+    <button class="search-tab" onclick="showSearchTab('multimodal')">Multimodal</button>
+</div>
+
+<div id="search-tab-hybrid" class="search-tab-content">
+    <form hx-post="/search/hybrid" hx-target="#search-results-hybrid" hx-swap="innerHTML">
+        <div class="control-row">
+            <select name="search_type">
+                <option value="rrf">RRF Search</option>
+                <option value="weighted">Weighted Search</option>
+            </select>
+            <input type="number" name="limit" value="10" min="1" max="50" style="width:70px">
+            <select name="rerank">
+                <option value="">No reranking</option>
+                <option value="cross_encoder">Cross-Encoder</option>
+            </select>
+            <select name="enhance">
+                <option value="">No enhancement</option>
+                <option value="spell">Spell Check</option>
+                <option value="rewrite">Rewrite</option>
+                <option value="expand">Expand</option>
+            </select>
+        </div>
+        <textarea name="query" placeholder="friendship transformation magic with bears" rows="2" required></textarea>
+        <button type="submit" class="btn-primary">Search</button>
+    </form>
+    <div id="search-results-hybrid"></div>
+</div>
+
+<div id="search-tab-semantic" class="search-tab-content" style="display:none">
+    <form hx-post="/search/semantic" hx-target="#search-results-semantic" hx-swap="innerHTML">
+        <input type="number" name="limit" value="10" min="1" max="50" style="width:70px">
+        <textarea name="query" placeholder="Search semantically..." rows="2" required></textarea>
+        <button type="submit" class="btn-primary">Search</button>
+    </form>
+    <div id="search-results-semantic"></div>
+</div>
+
+<div id="search-tab-keyword" class="search-tab-content" style="display:none">
+    <form hx-post="/search/keyword" hx-target="#search-results-keyword" hx-swap="innerHTML">
+        <input type="number" name="limit" value="10" min="1" max="50" style="width:70px">
+        <textarea name="query" placeholder="Search by keyword..." rows="2" required></textarea>
+        <button type="submit" class="btn-primary">Search</button>
+    </form>
+    <div id="search-results-keyword"></div>
+</div>
+
+<div id="search-tab-multimodal" class="search-tab-content" style="display:none">
+    <form hx-post="/search/multimodal" hx-target="#search-results-multimodal" hx-swap="innerHTML" hx-encoding="multipart/form-data">
+        <input type="file" name="file" accept="image/*" required>
+        <button type="submit" class="btn-primary">Search by Image</button>
+    </form>
+    <div id="search-results-multimodal"></div>
+</div>
+
+<script>
+    function showSearchTab(name) {
+        document.querySelectorAll('.search-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.search-tab-content').forEach(t => t.style.display = 'none');
+        document.getElementById('search-tab-' + name).style.display = '';
+        event.target.classList.add('active');
+    }
+</script>
+{% endblock %}

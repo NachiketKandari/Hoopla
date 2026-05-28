@@ -1,16 +1,16 @@
-from sentence_transformers import SentenceTransformer
 import numpy as np
 import re
 import json
+import os
 from .search_utils import (
     DEFAULT_CHUNK_SIZE, DEFAULT_OVERLAP_SIZE, EMBEDDING_PATH, DEFAULT_SEARCH_LIMIT,DEFAULT_MAX_CHUNK_SIZE,CHUNK_EMBEDDING_PATH, CHUNK_METADATA_PATH,
     load_movies,
 )
-import os
+from .model_loader import get_embedding_model
 
 class SemanticSearch:
     def __init__(self) -> None:
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.model = get_embedding_model()
         self.embeddings = None
         self.documents = None
         self.document_map = {}

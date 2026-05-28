@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-page">
+    <h1>🎬 Hoopla</h1>
+    <div class="auth-tabs">
+        <button class="auth-tab active" onclick="showAuthForm('login')">Login</button>
+        <button class="auth-tab" onclick="showAuthForm('register')">Register</button>
+    </div>
+    <div id="auth-forms">
+        <div id="login-form-wrapper">
+            {% include "partials/login_form.html" %}
+        </div>
+        <div id="register-form-wrapper" style="display:none;">
+            {% include "partials/register_form.html" %}
+        </div>
+    </div>
+</div>
+<script>
+    function showAuthForm(type) {
+        document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('login-form-wrapper').style.display = type === 'login' ? '' : 'none';
+        document.getElementById('register-form-wrapper').style.display = type === 'register' ? '' : 'none';
+    }
+</script>
+{% endblock %}

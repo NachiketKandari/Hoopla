@@ -6,11 +6,11 @@ import fnmatch
 import time
 from typing import List, Dict, Any
 import numpy as np
-from sentence_transformers import SentenceTransformer, CrossEncoder
 from collections import defaultdict
 import heapq
 from .search_utils import PROJECT_ROOT, CACHE_DIR, DEFAULT_K_VALUE
 from .keyword_search import InvertedIndex
+from .model_loader import get_embedding_model, get_cross_encoder_minilm
 from google import genai
 
 # Constants
@@ -266,13 +266,18 @@ class CodebaseRAG:
     def __init__(self, root_dir: str = PROJECT_ROOT, api_key: str = None):
         self.root_dir = root_dir
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
-        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        self.model = get_embedding_model()
+        self._reranker = None  # lazy-loaded only when reranking is used
         self.chunks = []
-        self.chunks = []
-        self.embeddings = None  # Description embeddings (Concept Search)
-        self.code_embeddings = None  # Code content embeddings (SimpleRAG / HyDE)
+        self.embeddings = None
+        self.code_embeddings = None
         self.keyword_index = None
+
+    @property
+    def reranker(self):
+        if self._reranker is None:
+            self._reranker = get_cross_encoder_minilm()
+        return self._reranker
 
     def generate_hypothetical_code(self, query: str) -> str:
         """
@@ -295,7 +300,7 @@ class CodebaseRAG:
             User Query: "{query}"
             
             Do not include any explanations or markdown formatting. Just provide the raw Python code that might exist in a codebase to solve this problem.
-
+            
             Example:
             Query: "tell me about hybrid search"
             Response:
@@ -349,9 +354,6 @@ class CodebaseRAG:
             })
         
         self.keyword_index = InvertedIndex()
-        self.keyword_index = InvertedIndex()
-        self.keyword_index.build_from_documents(docs_for_index)
-        
         self.keyword_index.build_from_documents(docs_for_index)
         
         print(f"DEBUG: docs_for_index size: {len(docs_for_index)}")

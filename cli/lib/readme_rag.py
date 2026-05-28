@@ -1,12 +1,12 @@
 import os
 import pickle
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from google import genai
 from collections import defaultdict, Counter
 import math
 import re
 from cli.lib.search_utils import CACHE_DIR, PROJECT_ROOT
+from cli.lib.model_loader import get_embedding_model
 
 # Configuration
 README_FILES = [
@@ -63,7 +63,7 @@ class ReadmeRAG:
 
         # Semantic Embeddings
         print("Generating embeddings...")
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.model = get_embedding_model()
         texts = [c['content'] for c in self.chunks]
         self.embeddings = self.model.encode(texts, show_progress_bar=True)
 
@@ -125,7 +125,7 @@ class ReadmeRAG:
             self.term_freqs = data['term_freqs']
             self.idf = data['idf']
         
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        self.model = get_embedding_model()
 
     def bm25_score(self, query, k1=1.5, b=0.75):
         tokens = self.tokenize(query)
@@ -148,7 +148,7 @@ class ReadmeRAG:
 
     def semantic_search(self, query):
         if self.model is None:
-             self.model = SentenceTransformer('all-MiniLM-L6-v2')
+             self.model = get_embedding_model()
              
         query_vec = self.model.encode([query])[0]
         scores = {}

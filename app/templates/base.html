@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hoopla</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>🎬 Hoopla</h2>
+            {% if user %}
+            <span class="user-info">👤 {{ user.username }}{% if is_admin %} (admin){% endif %}</span>
+            {% endif %}
+        </div>
+
+        <div class="sidebar-section">
+            <h4>Model</h4>
+            <select id="model-select" onchange="setModelType(this.value)">
+                <option value="API">System (50/day)</option>
+                <option value="custom_gemini">Custom Gemini Key</option>
+                <option value="local">Local (Ollama)</option>
+            </select>
+            <div id="custom-key-input" style="display:none; margin-top:8px;">
+                <input type="password" id="custom-api-key" placeholder="Gemini API Key" onchange="setCustomKey(this.value)">
+            </div>
+            <div id="ollama-model-input" style="display:none; margin-top:8px;">
+                <select id="ollama-model" onchange="setOllamaModel(this.value)"><option>Loading...</option></select>
+            </div>
+        </div>
+
+        {% if user %}
+        <nav class="sidebar-nav">
+            <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>💬 Chat</a>
+            <a href="/rag" {% if request.url.path == '/rag' %}class="active"{% endif %}>📚 RAG</a>
+            <a href="/search" {% if request.url.path == '/search' %}class="active"{% endif %}>🔍 Search</a>
+            <a href="/readme" {% if request.url.path == '/readme' %}class="active"{% endif %}>📖 README</a>
+            <a href="/dataset" {% if request.url.path == '/dataset' %}class="active"{% endif %}>🗂 Dataset</a>
+            {% if is_admin %}
+            <a href="/admin" {% if request.url.path == '/admin' %}class="active"{% endif %}>🔐 Admin</a>
+            <a href="/admin/chatbot" {% if request.url.path == '/admin/chatbot' %}class="active"{% endif %}>🤖 Admin Chat</a>
+            {% endif %}
+        </nav>
+        <div class="sidebar-footer">
+            <a href="/auth/logout">🚪 Logout</a>
+        </div>
+        {% endif %}
+    </aside>
+
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script>
+        // Restore saved model preferences from cookies
+        function getCookie(name) {
+            const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+            return v ? v[2] : null;
+        }
+        function setCookie(name, value, days) {
+            const d = new Date(); d.setTime(d.getTime() + 86400000*days);
+            document.cookie = name+'='+value+';path=/;expires='+d.toUTCString()+';SameSite=Lax';
+        }
+        function setModelType(v) {
+            setCookie('hoopla_model_type', v, 30);
+            document.getElementById('custom-key-input').style.display = v === 'custom_gemini' ? '' : 'none';
+            document.getElementById('ollama-model-input').style.display = v === 'local' ? '' : 'none';
+            if (v === 'local') fetchOllamaModels();
+        }
+        function setCustomKey(v) { setCookie('hoopla_custom_api_key', v, 30); }
+        function setOllamaModel(v) { setCookie('hoopla_ollama_model', v, 30); }
+
+        async function fetchOllamaModels() {
+            try {
+                const r = await fetch('/search/ollama-models');
+                const models = await r.json();
+                const sel = document.getElementById('ollama-model');
+                sel.innerHTML = models.map(m => `<option>${m}</option>`).join('');
+                const saved = getCookie('hoopla_ollama_model');
+                if (saved && models.includes(saved)) sel.value = saved;
+            } catch(e) { }
+        }
+
+        // Init on load
+        const savedModel = getCookie('hoopla_model_type') || 'API';
+        document.getElementById('model-select').value = savedModel;
+        setModelType(savedModel);
+        const savedKey = getCookie('hoopla_custom_api_key');
+        if (savedKey) document.getElementById('custom-api-key').value = savedKey;
+    </script>
+</body>
+</html>

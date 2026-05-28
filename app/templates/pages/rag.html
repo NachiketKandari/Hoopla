@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>📚 RAG</h1>
+<p class="caption">Retrieval Augmented Generation for movie data.</p>
+
+<form id="rag-form" hx-post="/rag/generate" hx-target="#rag-results" hx-swap="innerHTML">
+    <div class="control-row">
+        <select name="rag_type">
+            <option value="rag">Standard RAG</option>
+            <option value="summarize">Multi-Doc Summary</option>
+            <option value="citations">With Citations</option>
+            <option value="question">Direct Question</option>
+        </select>
+    </div>
+    <textarea name="query" placeholder="movies about action and dinosaurs" rows="2" required></textarea>
+    <button type="submit" class="btn-primary" hx-indicator="#rag-spinner">Generate</button>
+</form>
+<div id="rag-spinner" class="htmx-indicator">Searching and generating...</div>
+<div id="rag-results"></div>
+{% endblock %}
