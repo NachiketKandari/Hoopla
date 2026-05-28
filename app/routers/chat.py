@@ -3,14 +3,13 @@ import os
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, Depends, Query as QueryParam
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
 from fastapi import status
 
-from app.dependencies import require_user, consume_rate_limit, check_rate_limit, get_current_user, TEMPLATES_DIR
+from app.dependencies import require_user, consume_rate_limit, check_rate_limit, get_current_user
 from app.database import add_conversation, get_recent_chat_messages, mark_conversations_as_deleted
 from cli.lib.codebase_rag import CodebaseRAG, rewrite_query
+from app.templates_config import templates
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter()
 
 
@@ -39,7 +38,7 @@ async def chat_page(
     history = get_recent_chat_messages(user["id"], limit=20)
     return templates.TemplateResponse(
         "pages/chat.html",
-        {"request": request, "user": user, "history": history},
+        {"request": request, "username": user["username"], "is_admin": user.get("is_admin", 0) == 1, "history": history},
     )
 
 

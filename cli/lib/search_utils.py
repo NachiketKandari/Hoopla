@@ -40,7 +40,7 @@ def _load_from_streamlit_secrets(key: str) -> Optional[str]:
         return None
 
 
-def get_gemini_api_key() -> str:
+def get_gemini_api_key() -> Optional[str]:
     api_key = os.environ.get("GEMINI_API_KEY")
     if api_key:
         return api_key
@@ -49,10 +49,10 @@ def get_gemini_api_key() -> str:
     if api_key:
         return api_key
 
-    raise RuntimeError("Missing `GEMINI_API_KEY`. Set it via env var or Streamlit secrets.")
+    return None
 
 
-def get_deepseek_api_key() -> str:
+def get_deepseek_api_key() -> Optional[str]:
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if api_key:
         return api_key
@@ -61,26 +61,36 @@ def get_deepseek_api_key() -> str:
     if api_key:
         return api_key
 
-    raise RuntimeError("Missing `DEEPSEEK_API_KEY`. Set it via env var or Streamlit secrets.")
+    return None
 
 
 def get_llm_client():
-    """Return an LLM client based on LLM_PROVIDER env var (default: deepseek)."""
+    """Return an LLM client based on LLM_PROVIDER env var (default: deepseek).
+    Returns (None, None, None) if no API key is configured."""
     provider = os.environ.get("LLM_PROVIDER", "deepseek").lower()
 
-    if provider == "gemini":
-        from google import genai
-        api_key = get_gemini_api_key()
-        return genai.Client(api_key=api_key), "gemini-2.0-flash", "gemini"
-    else:
-        from openai import OpenAI
-        api_key = get_deepseek_api_key()
-        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
-        return client, "deepseek-v4-flash", "deepseek"
+    try:
+        if provider == "gemini":
+            from google import genai
+            api_key = get_gemini_api_key()
+            if not api_key:
+                return None, None, None
+            return genai.Client(api_key=api_key), "gemini-2.0-flash", "gemini"
+        else:
+            from openai import OpenAI
+            api_key = get_deepseek_api_key()
+            if not api_key:
+                return None, None, None
+            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+            return client, "deepseek-v4-flash", "deepseek"
+    except ImportError:
+        return None, None, None
 
 
 def generate_text(prompt: str, client, model: str, provider: str) -> str:
     """Unified text generation across Gemini and DeepSeek providers."""
+    if not client:
+        return ""
     if provider == "gemini":
         response = client.models.generate_content(model=model, contents=prompt)
         return response.text or ""

@@ -4,10 +4,9 @@ from fastapi.templating import Jinja2Templates
 from fastapi import status
 from pathlib import Path
 
-from app.dependencies import register_user, authenticate_user, TEMPLATES_DIR
+from app.dependencies import register_user, authenticate_user
 from app.database import get_user_by_id
-
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+from app.templates_config import templates
 router = APIRouter()
 
 

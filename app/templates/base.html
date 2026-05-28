@@ -11,8 +11,8 @@
     <aside class="sidebar">
         <div class="sidebar-header">
             <h2>🎬 Hoopla</h2>
-            {% if user %}
-            <span class="user-info">👤 {{ user.username }}{% if is_admin %} (admin){% endif %}</span>
+            {% if username %}
+            <span class="user-info">👤 {{ username }}{% if is_admin %} (admin){% endif %}</span>
             {% endif %}
         </div>
 
@@ -31,7 +31,7 @@
             </div>
         </div>
 
-        {% if user %}
+        {% if username %}
         <nav class="sidebar-nav">
             <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>💬 Chat</a>
             <a href="/rag" {% if request.url.path == '/rag' %}class="active"{% endif %}>📚 RAG</a>

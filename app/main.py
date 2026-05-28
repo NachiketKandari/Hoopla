@@ -16,32 +16,21 @@ logger = logging.getLogger("hoopla_fastapi")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Preload heavy models at startup so first request is fast."""
-    logger.info("Preloading ML models...")
-    try:
-        from cli.lib.model_loader import (
-            get_embedding_model,
-            get_clip_model,
-            get_cross_encoder_tinybert,
-            get_cross_encoder_minilm,
-        )
-        get_embedding_model()
-        get_cross_encoder_tinybert()
-        logger.info("Core models loaded (embedding + tinybert cross-encoder)")
-        # CLIP and MiniLM cross-encoder loaded lazily on first use
-    except Exception as e:
-        logger.warning(f"Model preload issue (non-fatal): {e}")
-
+    """Initialize database at startup. Models are lazy-loaded on first use."""
     from app.database import init_database, create_admin_user
     init_database()
     create_admin_user()
     logger.info("Database initialized")
-
+    logger.info("Models will load lazily on first request (may take a few seconds for first user)")
     yield
     logger.info("Shutting down")
 
 
 app = FastAPI(title="Hoopla", lifespan=lifespan, docs_url=None, redoc_url=None)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():

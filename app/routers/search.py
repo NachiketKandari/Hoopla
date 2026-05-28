@@ -3,24 +3,25 @@ import tempfile
 import requests
 from fastapi import APIRouter, Request, Form, Depends, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from fastapi import status
 
-from app.dependencies import require_user, TEMPLATES_DIR
+from app.dependencies import require_user
 from cli.lib.hybrid_search import HybridSearch
 from cli.lib.search_utils import load_movies, DEFAULT_SEARCH_LIMIT, DEFAULT_ALPHA_VALUE, DEFAULT_K_VALUE
 from cli.lib.semantic_search import search_chunked_command
 from cli.lib.keyword_search import InvertedIndex
 from cli.lib.multimodal_search import MultiModalSearch
 from cli.lib.query_enhancement import enhance_query
-
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+from app.templates_config import templates
 router = APIRouter()
 
 
 @router.get("", response_class=HTMLResponse)
 async def search_page(request: Request, user: dict = Depends(require_user)):
-    return templates.TemplateResponse("pages/search.html", {"request": request, "user": user})
+    return templates.TemplateResponse(
+        "pages/search.html",
+        {"request": request, "username": user["username"], "is_admin": user.get("is_admin", 0) == 1},
+    )
 
 
 @router.post("/hybrid", response_class=HTMLResponse)

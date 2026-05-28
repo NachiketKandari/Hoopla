@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import status
 
-from app.dependencies import require_admin, TEMPLATES_DIR
+from app.dependencies import require_admin
 from app.database import (
     get_all_users, get_user_conversations, get_db_stats, reset_user_requests,
     create_admin_chat_session, get_admin_chat_sessions, get_admin_chat_messages,
@@ -13,8 +13,7 @@ from app.database import (
 )
 from app.admin_memory import AdminMemory
 from app.model_handler import generate_with_gemini, generate_with_ollama
-
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+from app.templates_config import templates
 router = APIRouter()
 admin_memory = AdminMemory()
 
@@ -31,7 +30,7 @@ async def admin_panel(request: Request, user: dict = Depends(require_admin)):
     users = get_all_users()
     stats = get_db_stats()
     return templates.TemplateResponse(
-        "pages/admin.html", {"request": request, "user": user, "users": users, "stats": stats}
+        "pages/admin.html", {"request": request, "username": user["username"], "is_admin": True, "users": users, "stats": stats}
     )
 
 
@@ -65,7 +64,7 @@ async def admin_chatbot(request: Request, user: dict = Depends(require_admin)):
     sessions = get_admin_chat_sessions()
     return templates.TemplateResponse(
         "pages/admin_chatbot.html",
-        {"request": request, "user": user, "sessions": sessions},
+        {"request": request, "username": user["username"], "is_admin": True, "sessions": sessions},
     )
 
 

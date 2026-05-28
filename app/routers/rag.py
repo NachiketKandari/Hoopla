@@ -3,18 +3,21 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import status
 
-from app.dependencies import require_user, check_rate_limit, consume_rate_limit, TEMPLATES_DIR
+from app.dependencies import require_user, check_rate_limit, consume_rate_limit
 from app.database import add_conversation
 from app.model_handler import generate_response, generate_multidoc_summary, generate_citations, generate_answer
 from cli.lib.augmented_generation import get_results
+from app.templates_config import templates
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 router = APIRouter()
 
 
 @router.get("", response_class=HTMLResponse)
 async def rag_page(request: Request, user: dict = Depends(require_user)):
-    return templates.TemplateResponse("pages/rag.html", {"request": request, "user": user})
+    return templates.TemplateResponse(
+        "pages/rag.html",
+        {"request": request, "username": user["username"], "is_admin": user.get("is_admin", 0) == 1},
+    )
 
 
 @router.post("/generate", response_class=HTMLResponse)
