@@ -3,20 +3,25 @@ import os
 import json
 from typing import Optional
 from dotenv import load_dotenv
-from google import genai
 from .model_loader import get_cross_encoder_tinybert
 import logging
+
+from .search_utils import get_llm_client, generate_text
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-api_key = os.getenv("gemini_api_key")
-client = genai.Client(api_key=api_key)
-model = "gemini-2.0-flash"
+_client, _model, _provider = get_llm_client()
+
+
+def _generate(prompt: str) -> str:
+    return generate_text(prompt, _client, _model, _provider)
+
 
 cross_encoder = get_cross_encoder_tinybert()
 
-def rerank_individual(query: str, results: list[dict],limit: int) -> None:
+
+def rerank_individual(query: str, results: list[dict], limit: int) -> None:
     for doc in results:
         prompt = f"""Rate how well this movie matches the search query.
 
@@ -33,16 +38,16 @@ def rerank_individual(query: str, results: list[dict],limit: int) -> None:
 
         Score:"""
 
-        response = client.models.generate_content(model=model, contents=prompt)
-        doc['score'] = int((response.text or "").strip().strip('"'))
-    
-    sorted_results = sorted(results, key =lambda x:x['score'], reverse=True)[:limit] 
+        response_text = _generate(prompt)
+        doc['score'] = int(response_text.strip().strip('"'))
 
-    # logging.info(f"Cross-encoder Reranking Results: {sorted_results}")
+    sorted_results = sorted(results, key=lambda x: x['score'], reverse=True)[:limit]
+
     for i, res in enumerate(sorted_results, 1):
         print(f"{i}.\t{res['title']} \n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
 
-def rerank_batch(query: str, results: list[dict],limit: int) -> None:
+
+def rerank_batch(query: str, results: list[dict], limit: int) -> None:
 
     prompt = f"""Rank these movies by relevance to the search query.
 
@@ -56,33 +61,32 @@ def rerank_batch(query: str, results: list[dict],limit: int) -> None:
     [75, 12, 34, 2, 1]
     """
 
-    json_response = client.models.generate_content(model=model, contents=prompt)
-    batch_results = json.loads(json_response.text)
+    json_response = _generate(prompt)
+    batch_results = json.loads(json_response)
     docs = []
     for result in batch_results[:limit]:
         for doc in results:
             if doc['id'] == result:
                 docs.append(doc)
 
-    # logging.info(f"Cross-encoder Reranking Results: {docs}")
-
     for i, res in enumerate(docs, 1):
         print(f"{i}.\t{res['title']} \n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
 
-def rerank_cross_encoder(query: str, results: list[dict],limit: int) -> None:
-    
+
+def rerank_cross_encoder(query: str, results: list[dict], limit: int) -> None:
+
     pairs = []
     for doc in results:
         text = f"{doc.get('title', '')} - {doc.get('document', '')}"
         pairs.append([query, text])
-    
+
     if not pairs:
         print("No results to rerank.")
         return
 
     scores = cross_encoder.predict(pairs)
-    scored_results = list(zip(scores, results))    
-        
+    scored_results = list(zip(scores, results))
+
     sorted_scored_results = sorted(scored_results, key=lambda x: x[0], reverse=True)
 
     docs = []
@@ -90,11 +94,12 @@ def rerank_cross_encoder(query: str, results: list[dict],limit: int) -> None:
         result['cross-encoder-score'] = float(score)
         result['score'] = float(score)
         docs.append(result)
-    
+
     for i, res in enumerate(docs, 1):
         print(f"{i}.\t{res['title']} \n\tCross Encoder Score: {res['cross-encoder-score']}\n\tRRF Score: {res['rrf_score']:.3f} \n\tBM25 Rank: {res['bm25_rank']}, Semantic Rank: {res['semantic_rank']}\n\t{res['description'][:100]}...\n")
     
     return docs
+
 
 def format_results(results: list[dict]) -> str:
     formatted: str = ''
@@ -102,48 +107,50 @@ def format_results(results: list[dict]) -> str:
         formatted += f"Title: {res['title']} Description: {res['description']}\n"
     return formatted
 
+
 def evaluate_results(query: str, results: list[dict]):
 
     formatted_results = format_results(results)
-    
+
     prompt = f"""Rate how relevant each result is to this query on a 0-3 scale:
-    
+
     Query: "{query}"
 
-    
-    Results: 
-    
+
+    Results:
+
     {chr(10).join(formatted_results)}
 
-    
+
     Scale:
-    
+
     - 3: Highly relevant
-    
+
     - 2: Relevant
-    
+
     - 1: Marginally relevant
-    
+
     - 0: Not relevant
 
-    
+
     Do NOT give any numbers out of 0, 1, 2 or 3.
 
-    
+
     Return ONLY the scores in teh same order you were given the documents. Return a valid JSON
-    list, nothing else. Don't use markdown in your response. For example: 
-    
+    list, nothing else. Don't use markdown in your response. For example:
+
     [2, 0, 3, 2, 0, 1]
-    
+
     """
 
-    response = client.models.generate_content(model=model, contents=prompt)
+    response_text = _generate(prompt)
 
-    res_list = json.loads(response.text)
+    res_list = json.loads(response_text)
     for i in range(0, len(res_list)):
         print(f"{results[i]['title']} : {res_list[i]}/3\n")
 
-def re_rank(query: str, results: list[dict], limit: int ,method: Optional[str] = None) -> str:
+
+def re_rank(query: str, results: list[dict], limit: int, method: Optional[str] = None) -> str:
     match method:
         case "individual":
             return rerank_individual(query, results, limit)

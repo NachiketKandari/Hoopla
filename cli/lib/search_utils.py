@@ -52,6 +52,46 @@ def get_gemini_api_key() -> str:
     raise RuntimeError("Missing `GEMINI_API_KEY`. Set it via env var or Streamlit secrets.")
 
 
+def get_deepseek_api_key() -> str:
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    if api_key:
+        return api_key
+
+    api_key = _load_from_streamlit_secrets("DEEPSEEK_API_KEY")
+    if api_key:
+        return api_key
+
+    raise RuntimeError("Missing `DEEPSEEK_API_KEY`. Set it via env var or Streamlit secrets.")
+
+
+def get_llm_client():
+    """Return an LLM client based on LLM_PROVIDER env var (default: deepseek)."""
+    provider = os.environ.get("LLM_PROVIDER", "deepseek").lower()
+
+    if provider == "gemini":
+        from google import genai
+        api_key = get_gemini_api_key()
+        return genai.Client(api_key=api_key), "gemini-2.0-flash", "gemini"
+    else:
+        from openai import OpenAI
+        api_key = get_deepseek_api_key()
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/v1")
+        return client, "deepseek-v4-flash", "deepseek"
+
+
+def generate_text(prompt: str, client, model: str, provider: str) -> str:
+    """Unified text generation across Gemini and DeepSeek providers."""
+    if provider == "gemini":
+        response = client.models.generate_content(model=model, contents=prompt)
+        return response.text or ""
+    else:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content or ""
+
+
 def load_movies() -> list[dict]:
     with open(MOVIE_PATH, "r") as file:
         data = json.load(file)

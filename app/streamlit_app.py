@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from cli.lib.hybrid_search import HybridSearch, rrf_search_command, weighted_search_command
 from cli.lib.search_utils import load_movies, DEFAULT_SEARCH_LIMIT, DEFAULT_ALPHA_VALUE, DEFAULT_K_VALUE
 from cli.lib.augmented_generation import get_results
-from app.model_handler import generate_response, generate_multidoc_summary, generate_citations, generate_answer, InvalidAPIKeyError
+from app.model_handler import generate_response, generate_multidoc_summary, generate_citations, generate_answer, InvalidAPIKeyError, generate_with_provider, generate_with_ollama, generate_with_gemini
 from cli.lib.multimodal_search import MultiModalSearch
 from cli.lib.semantic_search import search_chunked_command
 from cli.lib.keyword_search import InvertedIndex
@@ -81,7 +81,7 @@ def render_alt_page(title: str, content_renderer, total_content_sections: int = 
 
 # Initializing session state
 if 'model_type' not in st.session_state:
-    st.session_state.model_type = "API"
+    st.session_state.model_type = "deepseek"
 if 'custom_api_key' not in st.session_state:
     st.session_state.custom_api_key = ""
 if 'ollama_models' not in st.session_state:
@@ -127,11 +127,11 @@ def check_and_consume_rate_limit() -> Tuple[bool, str]:
     if not user_id:
         return False, "User not logged in"
     
-    # No rate limit for custom Gemini API or local models
-    if st.session_state.model_type in ["custom_gemini", "local"]:
+    # No rate limit for custom API keys or local models
+    if st.session_state.model_type in ["custom_gemini", "custom_deepseek", "local"]:
         return True, ""
-    
-    is_system_api = st.session_state.model_type == "API"
+
+    is_system_api = st.session_state.model_type in ["API", "gemini", "deepseek"]
     allowed, requests_left = check_rate_limit(user_id, is_system_api)
     
     if not allowed:
@@ -157,6 +157,8 @@ def save_chat_history(query_type: str, query_text: str = None, query_image_base6
         model_type = f"local:{st.session_state.selected_ollama_model}"
     elif model_type == "custom_gemini":
         model_type = "gemini:custom"
+    elif model_type == "custom_deepseek":
+        model_type = "deepseek:custom"
     
     add_chat_history(
         user_id=user_id,
@@ -174,11 +176,11 @@ def check_rate_limit_for_api_call() -> bool:
     if not user_id:
         return False
     
-    # No rate limit for custom Gemini API or local models
-    if st.session_state.model_type in ["custom_gemini", "local"]:
+    # No rate limit for custom API keys or local models
+    if st.session_state.model_type in ["custom_gemini", "custom_deepseek", "local"]:
         return True
 
-    is_system_api = st.session_state.model_type == "API"
+    is_system_api = st.session_state.model_type in ["API", "gemini", "deepseek"]
     if not is_system_api:
         return True  # No limit for local API
     
@@ -195,7 +197,8 @@ with st.sidebar:
     st.header("Model Configuration")
     
     model_options = {
-        "System (Limited)": "API",
+        "System (Limited)": "deepseek",
+        "DeepSeek API (Custom Key)": "custom_deepseek",
         "Gemini API (Custom Key)": "custom_gemini",
         "Ollama (Local)": "local"
     }
@@ -212,17 +215,19 @@ with st.sidebar:
     st.sidebar.subheader("🤖 Model Selection")
     model_type_label = st.sidebar.selectbox(
         "Choose Model",
-        ["API (Gemini 2.0 Flash)", "Custom Gemini API", "Local (Ollama)"],
-        index=0 if st.session_state.model_type == "API" else (1 if st.session_state.model_type == "custom_gemini" else 2)
+        ["System (DeepSeek V4 Flash)", "Custom DeepSeek API", "Custom Gemini API", "Local (Ollama)"],
+        index=0 if st.session_state.model_type == "deepseek" else (1 if st.session_state.model_type == "custom_deepseek" else (2 if st.session_state.model_type == "custom_gemini" else 3))
     )
     
     # Update session state based on selection
-    if "Custom" in model_type_label:
+    if "Custom DeepSeek" in model_type_label:
+        st.session_state.model_type = "custom_deepseek"
+    elif "Custom Gemini" in model_type_label:
         st.session_state.model_type = "custom_gemini"
     elif "Local" in model_type_label:
         st.session_state.model_type = "local"
     else:
-        st.session_state.model_type = "API"
+        st.session_state.model_type = "deepseek"
 
     if st.session_state.model_type == "local":
         load_ollama_models()
@@ -235,8 +240,12 @@ with st.sidebar:
         else:
             st.warning("No Ollama models found. Make sure Ollama is running on localhost:11434")
             st.session_state.selected_ollama_model = None
-    elif st.session_state.model_type == "custom_gemini":
+    elif st.session_state.model_type in ["custom_gemini", "custom_deepseek"]:
         st.session_state.custom_api_key = st.text_input("Enter Gemini API Key", type="password", value=st.session_state.custom_api_key)
+        if not st.session_state.custom_api_key:
+            st.warning("Please enter a valid API key")
+    elif st.session_state.model_type == "custom_deepseek":
+        st.session_state.custom_api_key = st.text_input("Enter DeepSeek API Key", type="password", value=st.session_state.custom_api_key)
         if not st.session_state.custom_api_key:
             st.warning("Please enter a valid API key")
     else:
@@ -270,8 +279,8 @@ with st.sidebar:
                     st.info(f"Requests left today: **{requests_left}**")
                 else:
                     st.error("Daily limit reached (50 requests/day)")
-            elif st.session_state.model_type == "custom_gemini":
-                st.info("Using custom Gemini API Key (unlimited)")
+            elif st.session_state.model_type in ["custom_gemini", "custom_deepseek"]:
+                st.info("Using custom API Key (unlimited)")
             else:
                 st.info("Using local API (unlimited)")
         
@@ -359,7 +368,7 @@ if st.session_state.get("show_dataset_panel"):
     render_alt_page("Dataset Viewer", _render_dataset)
 
 st.title("🎬 Hoopla")
-st.caption("Unified UI for Hoopla’s hybrid search, RAG workflows, semantic retrieval, keyword tools, reranking helpers, and multimodal experiments powered by Gemini/Ollama.")
+st.caption("Unified UI for Hoopla’s hybrid search, RAG workflows, semantic retrieval, keyword tools, reranking helpers, and multimodal experiments powered by DeepSeek/Gemini/Ollama.")
 
 # Load chat history from database ONCE when user logs in (before tabs to avoid repeated loads)
 user_id = get_current_user_id()
@@ -483,7 +492,7 @@ with tab1:
                             chat_context += "\n"
                         
                         # Codebase RAG Logic
-                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                        api_key = st.session_state.custom_api_key if st.session_state.model_type in ["custom_gemini", "custom_deepseek"] else None
                         rag = CodebaseRAG(api_key=api_key)
                         
                         search_query = prompt
@@ -546,13 +555,13 @@ Code Chunks:
 Your response:"""
                         
                         # Generate response
-                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                        api_key = st.session_state.custom_api_key if st.session_state.model_type in ["custom_gemini", "custom_deepseek"] else None
                         if st.session_state.model_type == "local" and st.session_state.selected_ollama_model:
                             from app.model_handler import generate_with_ollama
                             response = generate_with_ollama(enhanced_prompt, st.session_state.selected_ollama_model)
                         else:
-                            from app.model_handler import generate_with_gemini
-                            response = generate_with_gemini(enhanced_prompt, api_key=api_key)
+                            from app.model_handler import generate_with_provider
+                            response = generate_with_provider(enhanced_prompt, provider=st.session_state.model_type, api_key=api_key)
                         
                         st.write(response)
                         
@@ -578,6 +587,8 @@ Your response:"""
                                 model_type_str = f"local:{st.session_state.selected_ollama_model}"
                             elif model_type_str == "custom_gemini":
                                 model_type_str = "gemini:custom"
+                            elif model_type_str == "custom_deepseek":
+                                model_type_str = "deepseek:custom"
                             
                             add_conversation(
                                 user_id=user_id,
@@ -591,7 +602,7 @@ Your response:"""
                             
                     except InvalidAPIKeyError as e:
                         logger.error(f"Invalid API Key in chat: {str(e)}")
-                        st.error("⚠️ **Invalid API Key**: Please check your Gemini API key in the sidebar configuration.")
+                        st.error("⚠️ **Invalid API Key**: Please check your API key in the sidebar configuration.")
                     except Exception as e:
                         logger.exception("Chat generation failed")
                         st.error(f"Error generating response: {str(e)}")
@@ -622,7 +633,7 @@ with tab2:
                         
                         st.subheader("Generated Response")
                         
-                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                        api_key = st.session_state.custom_api_key if st.session_state.model_type in ["custom_gemini", "custom_deepseek"] else None
                         
                         if rag_type == "rag":
                             response = generate_response(query, results, st.session_state.model_type, st.session_state.selected_ollama_model, api_key=api_key)
@@ -643,6 +654,8 @@ with tab2:
                                 model_type_str = f"local:{st.session_state.selected_ollama_model}"
                             elif model_type_str == "custom_gemini":
                                 model_type_str = "gemini:custom"
+                            elif model_type_str == "custom_deepseek":
+                                model_type_str = "deepseek:custom"
                             
                             # Determine mode based on RAG type
                             mode_map = {
@@ -664,7 +677,7 @@ with tab2:
                         log_event("rag_generate_completed", rag_type=rag_type, result_count=len(results))
                     except InvalidAPIKeyError as e:
                         logger.error(f"Invalid API Key: {str(e)}")
-                        st.error("⚠️ **Invalid API Key**: The provided Gemini API key is invalid or has expired. Please check your key in the sidebar configuration.")
+                        st.error("⚠️ **Invalid API Key**: The provided API key is invalid or has expired. Please check your key in the sidebar configuration.")
                     except Exception as e:
                         logger.exception("RAG generation failed")
                         st.error(f"Error: {str(e)}")
@@ -729,8 +742,8 @@ with tab3:
                                             st.error("Rate limit reached. Cannot complete reranking.")
                                             break
                                     
-                                    from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
-                                    api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                                    from app.model_handler import generate_with_provider, generate_with_ollama, InvalidAPIKeyError
+                                    api_key = st.session_state.custom_api_key if st.session_state.model_type in ["custom_gemini", "custom_deepseek"] else None
                                     prompt = f"""Rate how well this movie matches the search query.
 
                                     Query: "{query}"
@@ -750,7 +763,7 @@ with tab3:
                                         response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                     else:
                                         try:
-                                            response_text = generate_with_gemini(prompt, api_key=api_key)
+                                            response_text = generate_with_provider(prompt, provider=st.session_state.model_type, api_key=api_key)
                                         except InvalidAPIKeyError as e:
                                             logger.error(f"Invalid API Key during reranking: {str(e)}")
                                             st.error("⚠️ **Invalid API Key**: Cannot rerank results. Please check your Gemini API key.")
@@ -763,8 +776,8 @@ with tab3:
                                     if not check_rate_limit_for_api_call():
                                         st.error("Rate limit reached. Cannot complete reranking.")
                                     else:
-                                        from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
-                                        api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                                        from app.model_handler import generate_with_provider, generate_with_ollama, InvalidAPIKeyError
+                                        api_key = st.session_state.custom_api_key if st.session_state.model_type in ["custom_gemini", "custom_deepseek"] else None
                                         prompt = f"""Rank these movies by relevance to the search query.
 
                                         Query: "{query}"
@@ -781,14 +794,14 @@ with tab3:
                                             json_response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                         else:
                                             try:
-                                                json_response_text = generate_with_gemini(prompt, api_key=api_key)
+                                                json_response_text = generate_with_provider(prompt, provider=st.session_state.model_type, api_key=api_key)
                                             except InvalidAPIKeyError as e:
                                                 logger.error(f"Invalid API Key during batch reranking: {str(e)}")
                                                 st.error("⚠️ **Invalid API Key**: Cannot rerank results. Please check your Gemini API key.")
                                                 json_response_text = "[]"
                                 else:
-                                    from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
-                                    api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                                    from app.model_handler import generate_with_provider, generate_with_ollama, InvalidAPIKeyError
+                                    api_key = st.session_state.custom_api_key if st.session_state.model_type in ["custom_gemini", "custom_deepseek"] else None
                                     prompt = f"""Rank these movies by relevance to the search query.
 
                                     Query: "{query}"
@@ -805,7 +818,7 @@ with tab3:
                                         json_response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                     else:
                                         try:
-                                            json_response_text = generate_with_gemini(prompt, api_key=api_key)
+                                            json_response_text = generate_with_provider(prompt, provider=st.session_state.model_type, api_key=api_key)
                                         except InvalidAPIKeyError as e:
                                             logger.error(f"Invalid API Key during batch reranking: {str(e)}")
                                             st.error("⚠️ **Invalid API Key**: Cannot rerank results. Please check your Gemini API key.")
@@ -860,9 +873,9 @@ with tab3:
                                     st.error("Rate limit reached. Cannot complete evaluation.")
                                 else:
                                     from cli.lib.reranking import format_results
-                                    from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
+                                    from app.model_handler import generate_with_provider, generate_with_ollama, InvalidAPIKeyError
                                     import json
-                                    api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                                    api_key = st.session_state.custom_api_key if st.session_state.model_type in ["custom_gemini", "custom_deepseek"] else None
                                     
                                     with st.expander("Evaluation Results"):
                                         formatted_results = format_results(results)
@@ -901,16 +914,16 @@ with tab3:
                                             response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                         else:
                                             try:
-                                                response_text = generate_with_gemini(prompt, api_key=api_key)
+                                                response_text = generate_with_provider(prompt, provider=st.session_state.model_type, api_key=api_key)
                                             except InvalidAPIKeyError as e:
                                                 logger.error(f"Invalid API Key during evaluation: {str(e)}")
                                                 st.error("⚠️ **Invalid API Key**: Cannot evaluate results. Please check your Gemini API key.")
                                                 response_text = None
                             else:
                                 from cli.lib.reranking import format_results
-                                from app.model_handler import generate_with_gemini, generate_with_ollama, InvalidAPIKeyError
+                                from app.model_handler import generate_with_provider, generate_with_ollama, InvalidAPIKeyError
                                 import json
-                                api_key = st.session_state.custom_api_key if st.session_state.model_type == "custom_gemini" else None
+                                api_key = st.session_state.custom_api_key if st.session_state.model_type in ["custom_gemini", "custom_deepseek"] else None
                                 
                                 with st.expander("Evaluation Results"):
                                     formatted_results = format_results(results)
@@ -949,7 +962,7 @@ with tab3:
                                         response_text = generate_with_ollama(prompt, st.session_state.selected_ollama_model)
                                     else:
                                         try:
-                                            response_text = generate_with_gemini(prompt, api_key=api_key)
+                                            response_text = generate_with_provider(prompt, provider=st.session_state.model_type, api_key=api_key)
                                         except InvalidAPIKeyError as e:
                                             logger.error(f"Invalid API Key during evaluation: {str(e)}")
                                             st.error("⚠️ **Invalid API Key**: Cannot evaluate results. Please check your Gemini API key.")
@@ -993,7 +1006,7 @@ with tab3:
                     log_event("hybrid_search_completed", search_type=search_type, result_count=len(results))
                 except InvalidAPIKeyError as e:
                     logger.error(f"Invalid API Key: {str(e)}")
-                    st.error("⚠️ **Invalid API Key**: The provided Gemini API key is invalid or has expired. Please check your key in the sidebar configuration.")
+                    st.error("⚠️ **Invalid API Key**: The provided API key is invalid or has expired. Please check your key in the sidebar configuration.")
                 except Exception as e:
                     logger.exception("Hybrid search failed")
                     st.error(f"Error: {str(e)}")
