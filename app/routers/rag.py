@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from fastapi import status
 
 from app.dependencies import require_user, check_rate_limit, consume_rate_limit
 from app.database import add_conversation
-from app.model_handler import generate_response, generate_multidoc_summary, generate_citations, generate_answer
+from app.model_handler import generate_response, generate_multidoc_summary, generate_citations, generate_answer, InvalidAPIKeyError
 from cli.lib.augmented_generation import get_results
 from app.templates_config import templates
 
@@ -81,6 +80,15 @@ async def generate_rag(
             </div>"""
         )
 
+    except InvalidAPIKeyError as e:
+        return HTMLResponse(
+            content=f'''<div class="error-message">
+                <strong>API Key Error</strong><br>
+                {str(e)}<br><br>
+                <small>Set a valid key in your .env file or use the sidebar to configure a custom API key.</small>
+            </div>''',
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
     except Exception as e:
         return HTMLResponse(
             content=f'<div class="error-message">Error: {str(e)}</div>',

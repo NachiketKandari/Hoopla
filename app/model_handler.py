@@ -86,15 +86,14 @@ def generate_with_ollama(prompt: str, model_name: str) -> str:
 
 # ── Unified generation (routes by provider) ────────────────
 
-def generate_with_provider(prompt: str, provider: str = "deepseek", api_key: str = None, ollama_model: str = None) -> str:
-    """Route generation to the selected provider. provider: 'gemini', 'deepseek', or 'local'."""
+def generate_with_provider(prompt: str, provider: str = None, api_key: str = None, ollama_model: str = None) -> str:
+    """Route generation to the selected provider. Defaults to Gemini when no provider specified."""
     if provider == "local" and ollama_model:
         return generate_with_ollama(prompt, ollama_model)
-    elif provider in ("gemini", "custom_gemini"):
-        return generate_with_gemini(prompt, api_key)
-    else:
-        # deepseek, custom_deepseek, API, or anything else defaults to deepseek
+    elif provider == "deepseek":
         return generate_with_deepseek(prompt, api_key)
+    else:
+        return generate_with_gemini(prompt, api_key)
 
 def generate_response(query: str, results: list[dict], model_type: str = "API", ollama_model: str = None, api_key: str = None) -> str:
     prompt = f"""Answer the question or provide information based on the provided documents. This should be tailored to Hoopla users. Hoopla is a movie streaming service. Respond without any bolding, italics, or other markdown. Just the text in points if neccessary.

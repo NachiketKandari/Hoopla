@@ -1,20 +1,41 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>📚 RAG</h1>
-<p class="caption">Retrieval Augmented Generation for movie data.</p>
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+    <h1>📚 RAG</h1>
+    <span class="badge" style="font-size: 0.75rem;">Experimental</span>
+</div>
+<p class="caption">Retrieval Augmented Generation — ask questions about our movie catalog and get AI-powered answers with source citations.</p>
+
+<div style="display: flex; gap: 0; margin-bottom: 20px;">
+    <button class="search-tab active" onclick="switchRagType('rag', this)" id="tab-rag">Standard RAG</button>
+    <button class="search-tab" onclick="switchRagType('summarize', this)" id="tab-summarize">Multi-Doc Summary</button>
+    <button class="search-tab" onclick="switchRagType('citations', this)" id="tab-citations">With Citations</button>
+    <button class="search-tab" onclick="switchRagType('question', this)" id="tab-question">Direct Question</button>
+</div>
 
 <form id="rag-form" hx-post="/rag/generate" hx-target="#rag-results" hx-swap="innerHTML">
-    <div class="control-row">
-        <select name="rag_type">
-            <option value="rag">Standard RAG</option>
-            <option value="summarize">Multi-Doc Summary</option>
-            <option value="citations">With Citations</option>
-            <option value="question">Direct Question</option>
-        </select>
+    <input type="hidden" name="rag_type" id="rag_type_input" value="rag">
+    <textarea name="query" placeholder="Try: movies about space exploration and dinosaurs" rows="3" required></textarea>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+        <span style="font-size: 0.75rem; color: var(--text-dim);">Powered by Gemini + local vector search</span>
+        <button type="submit" class="btn-primary" hx-indicator="#rag-spinner" style="min-width: 140px;">🔍 Search & Generate</button>
     </div>
-    <textarea name="query" placeholder="movies about action and dinosaurs" rows="2" required></textarea>
-    <button type="submit" class="btn-primary" hx-indicator="#rag-spinner">Generate</button>
 </form>
-<div id="rag-spinner" class="htmx-indicator">Searching and generating...</div>
+<div id="rag-spinner" class="htmx-indicator" style="text-align: center; padding: 24px;">
+    <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px;"></div>
+    Searching the catalog and generating response...
+</div>
 <div id="rag-results"></div>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+function switchRagType(type, btn) {
+    document.getElementById('rag_type_input').value = type;
+    document.querySelectorAll('.search-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+}
+</script>
 {% endblock %}
